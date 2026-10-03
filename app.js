@@ -341,7 +341,7 @@ function renderCoach(cur,pre,ym){
 
 function openDetails(ids){
   const arr=ids.map(id=>state.txs.find(t=>t.id===id)).filter(Boolean);
-  if(!arr.length){ $('#detailsDialog').close(); return; }
+  if(!arr.length) return;
   const total=arr.reduce((s,t)=>s+t.amount,0);
   $('#detailsTitle').textContent=`${arr[0].merchant} · ${fmt(total)}`;
   $('#detailsList').innerHTML=arr.map(t=>`
@@ -356,7 +356,7 @@ function openDetails(ids){
       </div>
     </div>
   `).join('');
-  if(!$('#detailsDialog').open) $('#detailsDialog').showModal();
+  $('#detailsDialog').showModal();
   $$('.edit-one').forEach(b=>b.onclick=()=>{ $('#detailsDialog').close(); openEdit(b.dataset.id); });
   $$('.delete-one').forEach(b=>b.onclick=()=>{
     state.txs=state.txs.filter(t=>t.id!==b.dataset.id); save(); openDetails(ids.filter(x=>x!==b.dataset.id)); toast('삭제했어요');
@@ -410,8 +410,6 @@ $('#saveReviewedBtn').onclick=()=>{
 };
 $('#manualAddBtn').onclick=()=>openEdit();
 $('#saveEditBtn').onclick=()=>{
-  if(!$('#editForm').reportValidity()) return;
-  if(Number($('#editAmount').value)<=0){ toast('금액은 0원보다 커야 합니다'); return; }
   const t={
     id:state.editingId||crypto.randomUUID(),
     date:$('#editDate').value||today(),
