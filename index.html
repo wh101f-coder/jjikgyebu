@@ -1,0 +1,144 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#111111" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+  <meta name="apple-mobile-web-app-title" content="찍계부" />
+  <link rel="apple-touch-icon" href="./icons/icon-180.png" />
+  <link rel="manifest" href="./manifest.webmanifest" />
+  <link rel="stylesheet" href="./styles.css" />
+  <title>찍계부</title>
+</head>
+<body>
+  <div id="app">
+    <header class="topbar">
+      <div>
+        <div class="eyebrow">SCREENSHOT LEDGER</div>
+        <h1>찍계부</h1>
+      </div>
+      <button class="icon-btn" id="settingsBtn" aria-label="설정">•••</button>
+    </header>
+
+    <main>
+      <section class="hero card">
+        <div class="hero-head">
+          <div>
+            <div class="muted" id="monthLabel"></div>
+            <div class="big-money" id="monthTotal">₩0</div>
+          </div>
+          <div class="delta-badge" id="monthDelta">지난달 비교 준비중</div>
+        </div>
+        <div class="hero-actions">
+          <label class="primary-action">
+            <input id="imageInput" type="file" accept="image/*" multiple />
+            <span class="camera">📸</span>
+            <span>
+              <strong>카드내역 스샷 등록</strong>
+              <small>여러 장 한 번에 선택</small>
+            </span>
+          </label>
+        </div>
+      </section>
+
+      <section id="importPanel" class="card hidden">
+        <div class="section-title-row">
+          <div>
+            <div class="eyebrow">IMPORT</div>
+            <h2>스크린샷 분석</h2>
+          </div>
+          <button class="text-btn danger" id="cancelImportBtn">취소</button>
+        </div>
+        <div id="fileSummary" class="summary-strip"></div>
+        <div class="progress-wrap">
+          <div class="progress"><div id="progressBar"></div></div>
+          <div id="progressText" class="muted">대기 중</div>
+        </div>
+        <div id="ocrPreview" class="ocr-preview"></div>
+        <button id="analyzeBtn" class="full-btn">분석 시작</button>
+      </section>
+
+      <section id="reviewPanel" class="card hidden">
+        <div class="section-title-row">
+          <div>
+            <div class="eyebrow">REVIEW</div>
+            <h2>등록 전 확인</h2>
+          </div>
+          <div class="pill" id="reviewCount">0건</div>
+        </div>
+        <div id="reviewStats" class="stats-grid"></div>
+        <div id="reviewList" class="review-list"></div>
+        <button id="saveReviewedBtn" class="full-btn">이대로 등록</button>
+      </section>
+
+      <section class="section">
+        <div class="section-title-row">
+          <div>
+            <div class="eyebrow">THIS MONTH</div>
+            <h2>지출 내역</h2>
+          </div>
+          <button class="text-btn" id="manualAddBtn">+ 직접 등록</button>
+        </div>
+        <div id="groupedList" class="grouped-list"></div>
+        <div id="emptyState" class="empty">
+          <div class="empty-icon">🧾</div>
+          <strong>아직 등록된 지출이 없어요</strong>
+          <span>카드앱 스크린샷을 올리면 자동으로 정리합니다</span>
+        </div>
+      </section>
+
+      <section class="section">
+        <div class="section-title-row">
+          <div>
+            <div class="eyebrow">COACH</div>
+            <h2>이번 달 소비 코치</h2>
+          </div>
+        </div>
+        <div id="coachCard" class="coach card"></div>
+      </section>
+    </main>
+  </div>
+
+  <dialog id="editDialog">
+    <form method="dialog" id="editForm">
+      <div class="dialog-head">
+        <h3 id="dialogTitle">직접 등록</h3>
+        <button value="cancel" class="close-btn">✕</button>
+      </div>
+      <label>날짜<input id="editDate" type="date" required /></label>
+      <label>업체명<input id="editMerchant" type="text" placeholder="예: GS25" required /></label>
+      <label>금액<input id="editAmount" type="number" min="1" step="1" inputmode="numeric" placeholder="0" required /></label>
+      <label>카테고리
+        <select id="editCategory">
+          <option>식비</option><option>카페</option><option>편의점</option>
+          <option>교통</option><option>쇼핑</option><option>취미</option>
+          <option>생활</option><option>의료</option><option>교육</option><option>기타</option>
+        </select>
+      </label>
+      <label>카드/결제수단<input id="editCard" type="text" placeholder="예: 현대카드" /></label>
+      <div class="dialog-actions">
+        <button value="cancel" class="secondary-btn">취소</button>
+        <button type="button" id="saveEditBtn" class="primary-btn">저장</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="detailsDialog">
+    <div class="dialog-head">
+      <div>
+        <div class="eyebrow">DETAILS</div>
+        <h3 id="detailsTitle">상세내역</h3>
+      </div>
+      <button class="close-btn" id="detailsClose">✕</button>
+    </div>
+    <div id="detailsList" class="details-list"></div>
+  </dialog>
+
+  <div id="toast" class="toast"></div>
+
+  <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+  <script src="./app.js"></script>
+</body>
+</html>
