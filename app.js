@@ -33,11 +33,11 @@ function categoryFor(name=''){
   const s=name.toLowerCase();
   const rules=[
     ['카페',['스타벅스','투썸','메가커피','컴포즈','커피','cafe','카페','빽다방','이디야']],
-    ['편의점',['gs25','cu','세븐일레븐','이마트24','편의점']],
+    ['편의점',['gs25','씨유','cu','세븐일레븐','이마트24','편의점']],
     ['식비',['식당','분식','치킨','피자','버거','김밥','국밥','고기','곱창','포차','족발','보쌈','배달','요기요','배민','쿠팡이츠','맥도날드','버거킹','맘스터치']],
-    ['교통',['택시','카카오t','버스','지하철','코레일','srt','주유','충전소','하이패스']],
+    ['교통',['지에스차지비','차지비','택시','카카오t','버스','지하철','코레일','srt','주유','충전소','하이패스']],
     ['쇼핑',['쿠팡','네이버페이','무신사','올리브영','다이소','마트','백화점','쇼핑']],
-    ['취미',['인형뽑기','코인노래방','노래방','pc방','영화','cgv','롯데시네마','메가박스','게임','스팀']],
+    ['취미',['인형뽑기','노래연습장','코인노래방','노래방','pc방','영화','cgv','롯데시네마','메가박스','게임','스팀']],
     ['의료',['병원','약국','의원','치과']],
     ['교육',['학원','교보문고','yes24','알라딘','문고']]
   ];
@@ -65,23 +65,19 @@ function parseDate(text, fallbackDate){
   return iso(new Date(fallbackDate||Date.now()));
 }
 
+// Amounts must end in the actual Korean currency unit. Never accept bare digits.
 function amountFrom(text){
-  const clean=text.replace(/[₩￦]/g,'').replace(/\s+/g,' ');
-  const matches=[...clean.matchAll(/(?:^|[^\d])(\d{1,3}(?:,\d{3})+|\d{3,7})\s*원?(?!\d)/g)];
-  if(!matches.length) return null;
-  const vals=matches.map(m=>Number(m[1].replace(/,/g,''))).filter(v=>v>0 && v<100000000);
-  if(!vals.length) return null;
-  // Card rows usually have the payment amount as the last amount-like token.
-  return vals[vals.length-1];
+  const matches=[...String(text).matchAll(/(?:^|[^\d,])(\d{1,3}(?:,\d{3})+|\d+)\s*원(?![가-힣])/g)];
+  if(matches.length!==1) return null;
+  const value=Number(matches[0][1].replace(/,/g,''));
+  return Number.isSafeInteger(value) && value>0 && value<100000000 ? value : null;
 }
 
 function isNoise(line=''){
   const s=line.trim();
-  if(!s) return true;
-  const noise=['승인','일시불','할부','이용내역','결제예정','결제일','검색','전체','국내','해외','승인내역','카드이용','원'];
-  if(noise.some(n=>s===n)) return true;
-  if(/^\d{1,2}:\d{2}$/.test(s)) return true;
-  return false;
+  return !s || /본인|가족|신용|체크|일시불|할부|분할납부|이용내역|결제예정|결제일|최신순|고액순|상세이용|접기/.test(s)
+    || /^총\s*\d+건/.test(s) || /^\d{1,2}:\d{2}$/.test(s)
+    || /^\d{1,2}월\s*\d{1,2}일$/.test(s) || s==='원';
 }
 
 function inferCard(text){
@@ -89,62 +85,90 @@ function inferCard(text){
   return '';
 }
 
-function parseTransactionsFromOCR(result, file, shotIndex){
+function parseTransactionsFromOCR(result, file, shotIndex, inheritedDate){
   const rawText=result?.data?.text||'';
-  const card=inferCard(rawText);
-  const lines=(result?.data?.lines||[])
-    .map(l=>({text:(l.text||'').trim(), bbox:l.bbox||null, conf:l.confidence||0}))
-    .filter(l=>l.text);
-
-  // Tesseract v5 can omit data.lines in some builds; fallback to plain lines.
-  const usable=lines.length ? lines : rawText.split(/\n+/).map((text,i)=>({text:text.trim(),bbox:null,conf:50,i})).filter(x=>x.text);
+  const data=result?.data||{};
+  const nested=(data.blocks||[]).flatMap(b=>(b.paragraphs||[]).flatMap(p=>p.lines||[]));
+  const lines=(data.lines?.length ? data.lines : nested)
+    .map(l=>({text:(l.text||'').trim(),bbox:l.bbox||null,conf:l.confidence||0,words:l.words||[]})).filter(l=>l.text);
+  const usable=lines.length ? lines : rawText.split(/\n+/).map(text=>({text:text.trim(),bbox:null,conf:50,words:[]})).filter(x=>x.text);
+  const width=data.imageSize?.width || Math.max(0,...usable.map(l=>l.bbox?.x1||0));
   const out=[];
-  let currentDate=parseDate('', file.lastModified||Date.now());
-
+  let currentDate=inheritedDate||parseDate('',file.lastModified||Date.now());
   for(let i=0;i<usable.length;i++){
     const line=usable[i];
-    const d=parseDate(line.text, file.lastModified||Date.now());
-    if(/\d{1,2}[.\-/월]\s*\d{1,2}/.test(line.text) || /20\d{2}/.test(line.text)) currentDate=d;
-
+    // Dates are headings, never merchant digits, card numbers, or payment metadata.
+    if(/^(?:20\d{2}[.\-/년]\s*)?\d{1,2}[.\-/월]\s*\d{1,2}(?:일)?\s*$/.test(line.text)) {
+      currentDate=parseDate(line.text,file.lastModified||Date.now()); continue;
+    }
+    if(isNoise(line.text)) continue;
     const amount=amountFrom(line.text);
-    if(!amount) continue;
-
-    // Find the closest plausible merchant line above; if same line contains text, use it first.
-    let same=line.text
-      .replace(/[₩￦]?\s*\d{1,3}(?:,\d{3})+\s*원?/g,' ')
-      .replace(/[₩￦]?\s*\d{3,7}\s*원/g,' ')
-      .replace(/20\d{2}[.\-/년]\s*\d{1,2}[.\-/월]\s*\d{1,2}일?/g,' ')
-      .replace(/\d{1,2}[.\-/월]\s*\d{1,2}일?/g,' ')
-      .trim();
-
-    let merchant=normalizeMerchant(same);
-    if(merchant.length<2 || isNoise(merchant)){
+    if(amount===null) continue;
+    const moneyWords=line.words.filter(w=>/원/.test(w.text||''));
+    const moneyBox=moneyWords.at(-1)?.bbox || line.bbox;
+    if(moneyBox && width && moneyBox.x1<width*0.70) continue;
+    let merchant='';
+    if(line.words.length && width){
+      merchant=line.words.filter(w=>w.bbox && w.bbox.x0>=width*0.14 && w.bbox.x1<width*0.74)
+        .map(w=>w.text).join(' ');
+    }else {
+      merchant=line.text.replace(/(?:\d{1,3}(?:,\d{3})+|\d+)\s*원/g,'').trim();
+    }
+    if(!merchant || isNoise(merchant)){
       merchant='';
-      for(let j=i-1;j>=Math.max(0,i-4);j--){
-        const t=normalizeMerchant(usable[j].text);
-        if(!t || isNoise(t)) continue;
-        if(amountFrom(t)) continue;
-        if(/^\d{1,2}[.\-/]\d{1,2}/.test(t)) continue;
-        if(/승인|일시불|할부|카드|결제|이용/.test(t) && t.length<12) continue;
-        merchant=t; break;
+      // With coordinates, use only text horizontally aligned with the amount.
+      if(line.bbox){
+        const cy=(line.bbox.y0+line.bbox.y1)/2;
+        const h=line.bbox.y1-line.bbox.y0;
+        const peers=usable.filter(l=>l!==line && l.bbox && !isNoise(l.text) && amountFrom(l.text)===null
+          && Math.abs((l.bbox.y0+l.bbox.y1)/2-cy)<=Math.max(h, l.bbox.y1-l.bbox.y0)*0.6
+          && l.bbox.x0>=width*0.14 && l.bbox.x1<width*0.75);
+        merchant=peers.sort((a,b)=>a.bbox.x0-b.bbox.x0).map(l=>l.text).join(' ');
+      }else {
+        const prev=usable[i-1];
+        if(prev && !isNoise(prev.text) && amountFrom(prev.text)===null) merchant=prev.text;
       }
     }
-    if(!merchant) merchant='업체명 확인 필요';
-
-    out.push({
-      id: crypto.randomUUID(),
-      date: currentDate,
-      merchant,
-      amount,
-      category: categoryFor(merchant),
-      card,
-      shotIndex,
-      y: line.bbox ? (line.bbox.y0 + line.bbox.y1)/2 : i,
-      confidence: Math.round(line.conf||50),
-      sourceName:file.name
-    });
+    merchant=normalizeMerchant(merchant);
+    if(isNoise(merchant)) merchant='';
+    out.push({id:crypto.randomUUID(),date:currentDate,merchant:merchant||'업체명 확인 필요',amount,
+      category:categoryFor(merchant),card:'',shotIndex,
+      y:moneyBox ? (moneyBox.y0+moneyBox.y1)/2 : i,
+      hasCoordinates:!!moneyBox, confidence:Math.round(line.conf||50),sourceName:file.name});
   }
-  return {transactions:out, rawText, card};
+  return {transactions:out,rawText,card:'',lastDate:currentDate};
+}
+
+// Card artwork is compared locally; the user supplies a product name once.
+const cardTemplates=JSON.parse(localStorage.getItem('jjig_card_templates')||'[]');
+function persistCards(){localStorage.setItem('jjig_card_templates',JSON.stringify(cardTemplates));}
+async function attachCardArtwork(file, transactions){
+  const bitmap=await createImageBitmap(file);
+  try {
+    const scale=bitmap.width/945;
+    for(const t of transactions){
+      if(!t.hasCoordinates) continue;
+      const canvas=document.createElement('canvas');canvas.width=16;canvas.height=24;
+      const ctx=canvas.getContext('2d',{willReadFrequently:true});
+      const top=t.y-27*scale;
+      if(top<0 || top+104*scale>bitmap.height) continue;
+      ctx.drawImage(bitmap,44*scale,top,66*scale,104*scale,0,0,16,24);
+      const pixels=Array.from(ctx.getImageData(0,0,16,24).data).filter((_,i)=>i%4!==3);
+      // Blank/white regions are not card artwork.
+      if(pixels.filter(v=>v<180).length<pixels.length*0.25) continue;
+      let match=null,best=Infinity;
+      for(const template of cardTemplates){
+        const distance=pixels.reduce((sum,v,i)=>sum+Math.abs(v-template.pixels[i]),0)/pixels.length;
+        if(distance<best){best=distance;match=template;}
+      }
+      if(best>24 || !match){
+        match={id:crypto.randomUUID(),name:`카드 ${cardTemplates.length+1}`,pixels,image:canvas.toDataURL('image/png')};
+        cardTemplates.push(match);
+      }
+      t.cardId=match.id;t.card=match.name;t.cardImage=match.image;
+    }
+    persistCards();
+  }finally{bitmap.close();}
 }
 
 function signature(t){
@@ -195,12 +219,15 @@ async function runOCR(){
       }
     });
     const shots=[];
+    let inheritedDate;
     state.ocrText=[];
     for(let i=0;i<state.files.length;i++){
       const file=state.files[i];
       $('#progressText').textContent=`${i+1}/${state.files.length}장 분석 중 · ${file.name}`;
       const r=await worker.recognize(file);
-      const parsed=parseTransactionsFromOCR(r,file,i);
+      const parsed=parseTransactionsFromOCR(r,file,i,inheritedDate);
+      inheritedDate=parsed.lastDate;
+      await attachCardArtwork(file,parsed.transactions);
       shots.push(parsed.transactions);
       state.ocrText.push(parsed.rawText);
       $('#ocrPreview').textContent += `\n\n━━ ${i+1}번째 스샷 ━━\n${parsed.rawText.slice(0,1800)}`;
@@ -238,7 +265,8 @@ function renderReview(removed=0){
         <input class="rv-merchant" value="${escapeHtml(t.merchant)}" />
         <div class="review-meta">
           <span class="chip">${t.date}</span>
-          <span class="chip">${escapeHtml(t.card||'카드 미확인')}</span>
+          ${t.cardImage?`<img src="${t.cardImage}" width="24" height="36" alt="카드 이미지" />`:''}
+          <input class="rv-card" aria-label="카드 이름" placeholder="카드 이름 입력" value="${escapeHtml(t.card)}" style="max-width:150px" />
           <span class="chip">OCR ${t.confidence}%</span>
         </div>
       </div>
@@ -258,7 +286,17 @@ function collectReview(){
     state.pending[i].merchant=el.querySelector('.rv-merchant').value.trim()||'업체명 확인 필요';
     state.pending[i].amount=Number(el.querySelector('.rv-amount').value)||0;
     state.pending[i].category=el.querySelector('.rv-category').value;
+    const name=el.querySelector('.rv-card').value.trim();
+    const t=state.pending[i];
+    if(name && name!==el.querySelector('.rv-card').defaultValue){
+      const template=cardTemplates.find(c=>c.id===t.cardId);
+      if(template) template.name=name;
+      state.pending.filter(x=>x.cardId && x.cardId===t.cardId).forEach(x=>x.card=name);
+      state.txs.filter(x=>x.cardId && x.cardId===t.cardId).forEach(x=>x.card=name);
+      t.card=name;
+    }
   });
+  persistCards();
 }
 
 function groupCurrentMonth(){
@@ -435,3 +473,4 @@ if('serviceWorker' in navigator){
   window.addEventListener('load',()=>navigator.serviceWorker.register('./sw.js').catch(console.warn));
 }
 render();
+
