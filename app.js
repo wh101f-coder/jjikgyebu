@@ -1,4 +1,14 @@
 
+const APP_VERSION = '1.0.2';
+const CATEGORIES = ['미분류','배달음식','전기차 충전','식비','카페','편의점','교통','쇼핑','취미','생활','의료','교육','기타'];
+const merchantMappings = JSON.parse(localStorage.getItem('jjig_merchant_mappings')||'{}');
+const cardNames = JSON.parse(localStorage.getItem('jjig_card_names')||'{}');
+const merchantKey = name => normalizeMerchant(name).replace(/\s/g,'').toLowerCase();
+function rememberCategory(name, category){
+  if(category==='미분류' || !name || name==='업체명 확인 필요') return;
+  merchantMappings[merchantKey(name)]=category;
+  localStorage.setItem('jjig_merchant_mappings',JSON.stringify(merchantMappings));
+}
 const $ = (s)=>document.querySelector(s);
 const $$ = (s)=>Array.from(document.querySelectorAll(s));
 const fmt = n => new Intl.NumberFormat('ko-KR').format(Math.round(Number(n)||0)) + '원';
@@ -13,7 +23,9 @@ let state = {
   files: [],
   pending: [],
   editingId: null,
-  ocrText: []
+  ocrText: [],
+  month: today().slice(0,7),
+  overlapRemoved: 0
 };
 
 const issuerKeywords = [
@@ -30,23 +42,22 @@ function toast(msg){
 }
 
 function categoryFor(name=''){
-  const s=name.toLowerCase();
+  const key=merchantKey(name);
+  if(Object.hasOwn(merchantMappings,key)) return merchantMappings[key];
   const rules=[
-    ['카페',['스타벅스','투썸','메가커피','컴포즈','커피','cafe','카페','빽다방','이디야']],
-    ['편의점',['gs25','씨유','cu','세븐일레븐','이마트24','편의점']],
-    ['식비',['식당','분식','치킨','피자','버거','김밥','국밥','고기','곱창','포차','족발','보쌈','배달','요기요','배민','쿠팡이츠','맥도날드','버거킹','맘스터치']],
-    ['교통',['지에스차지비','차지비','택시','카카오t','버스','지하철','코레일','srt','주유','충전소','하이패스']],
-    ['쇼핑',['쿠팡','네이버페이','무신사','올리브영','다이소','마트','백화점','쇼핑']],
-    ['취미',['인형뽑기','노래연습장','코인노래방','노래방','pc방','영화','cgv','롯데시네마','메가박스','게임','스팀']],
-    ['의료',['병원','약국','의원','치과']],
-    ['교육',['학원','교보문고','yes24','알라딘','문고']]
+    ['배달음식',/^(우아한형제들|배달의민족|배민|쿠팡이츠|요기요)$/],
+    ['전기차 충전',/^(지에스차지비|차지비|gs차지비)$/],
+    ['카페',/^(스타벅스|투썸플레이스|메가커피|컴포즈커피|빽다방|이디야)/],
+    ['편의점',/^(gs25|씨유|cu(?=$|[^a-z])|세븐일레븐|이마트24)/],
+    ['취미',/^(cgv|롯데시네마|메가박스)/]
   ];
-  for(const [cat, words] of rules) if(words.some(w=>s.includes(w.toLowerCase()))) return cat;
-  return '기타';
+  for(const [cat, pattern] of rules) if(pattern.test(key)) return cat;
+  return '미분류';
 }
 
 function normalizeMerchant(s=''){
   return s
+    .replace(/\(주\)|㈜|주식회사|유한회사/gi,'')
     .replace(/\s+/g,' ')
     .replace(/^[^\p{L}\p{N}]+|[^\p{L}\p{N})]+$/gu,'')
     .replace(/\(주\)|주식회사|유한회사/gi,'')
@@ -67,6 +78,7 @@ function parseDate(text, fallbackDate){
 
 // Amounts must end in the actual Korean currency unit. Never accept bare digits.
 function amountFrom(text){
+  if(/할인|취소|합계|총액|총\s*(이용|사용|결제)|결제예정/.test(text)) return null;
   const matches=[...String(text).matchAll(/(?:^|[^\d,])(\d{1,3}(?:,\d{3})+|\d+)\s*원(?![가-힣])/g)];
   if(matches.length!==1) return null;
   const value=Number(matches[0][1].replace(/,/g,''));
@@ -101,18 +113,20 @@ function parseTransactionsFromOCR(result, file, shotIndex, inheritedDate){
     if(/^(?:20\d{2}[.\-/년]\s*)?\d{1,2}[.\-/월]\s*\d{1,2}(?:일)?\s*$/.test(line.text)) {
       currentDate=parseDate(line.text,file.lastModified||Date.now()); continue;
     }
-    if(isNoise(line.text)) continue;
-    const amount=amountFrom(line.text);
+    if(/할인|취소|합계|총액|결제예정/.test(line.text)) continue;
+    if(isNoise(line.text) && !/원/.test(line.text)) continue;
+    const paymentText=line.text.replace(/(?:본인|가족)\s*\d{4}/g,'').replace(/신용|체크|일시불|할부/g,'');
+    const amount=amountFrom(paymentText);
     if(amount===null) continue;
     const moneyWords=line.words.filter(w=>/원/.test(w.text||''));
     const moneyBox=moneyWords.at(-1)?.bbox || line.bbox;
     if(moneyBox && width && moneyBox.x1<width*0.70) continue;
     let merchant='';
     if(line.words.length && width){
-      merchant=line.words.filter(w=>w.bbox && w.bbox.x0>=width*0.14 && w.bbox.x1<width*0.74)
+      merchant=line.words.filter(w=>w.bbox && !/원|본인|가족|신용|체크|일시불/.test(w.text) && !/^\d{4}$/.test(w.text) && w.bbox.x0>=width*0.14 && w.bbox.x1<width*0.74)
         .map(w=>w.text).join(' ');
     }else {
-      merchant=line.text.replace(/(?:\d{1,3}(?:,\d{3})+|\d+)\s*원/g,'').trim();
+      merchant=paymentText.replace(/(?:\d{1,3}(?:,\d{3})+|\d+)\s*원/g,'').trim();
     }
     if(!merchant || isNoise(merchant)){
       merchant='';
@@ -125,54 +139,41 @@ function parseTransactionsFromOCR(result, file, shotIndex, inheritedDate){
           && l.bbox.x0>=width*0.14 && l.bbox.x1<width*0.75);
         merchant=peers.sort((a,b)=>a.bbox.x0-b.bbox.x0).map(l=>l.text).join(' ');
       }else {
-        const prev=usable[i-1];
-        if(prev && !isNoise(prev.text) && amountFrom(prev.text)===null) merchant=prev.text;
+        for(let j=i-1;j>=Math.max(0,i-3);j--){
+          const prev=usable[j];
+          if(/원|할인/.test(prev.text)) break;
+          if(!isNoise(prev.text) && !/^\d/.test(prev.text)){merchant=prev.text;break;}
+        }
       }
     }
     merchant=normalizeMerchant(merchant);
     if(isNoise(merchant)) merchant='';
     out.push({id:crypto.randomUUID(),date:currentDate,merchant:merchant||'업체명 확인 필요',amount,
-      category:categoryFor(merchant),card:'',shotIndex,
+      category:categoryFor(merchant),card:'',cardLast4:'',discount:0,shotIndex,lineIndex:i,
       y:moneyBox ? (moneyBox.y0+moneyBox.y1)/2 : i,
       hasCoordinates:!!moneyBox, confidence:Math.round(line.conf||50),sourceName:file.name});
+  }
+  // Bind metadata only inside this payment's row, never inherit a card across rows.
+  for(let n=0;n<out.length;n++){
+    const t=out[n], next=out[n+1];
+    const row=usable.filter((l,index)=>{
+      if(t.hasCoordinates && l.bbox){
+        const cy=(l.bbox.y0+l.bbox.y1)/2;
+        return cy>=t.y-8 && cy<(next?.hasCoordinates ? next.y-8 : t.y+160);
+      }
+      return index>=t.lineIndex && index<(next?.lineIndex ?? usable.length);
+    });
+    const cards=[...new Set(row.flatMap(l=>[...l.text.matchAll(/(?:본인|가족)\s*(\d{4})(?!\d)/g)].map(m=>m[1])))];
+    if(cards.length===1){t.cardLast4=cards[0];t.cardId='last4:'+cards[0];t.card=cardNames[cards[0]]||'카드 '+cards[0];}
+    const discounts=row.flatMap(l=>[...l.text.matchAll(/할인\s*[:：]?\s*(\d{1,3}(?:,\d{3})+|\d+)\s*원/g)].map(m=>Number(m[1].replace(/,/g,''))));
+    if(discounts.length===1 && discounts[0]<=t.amount) t.discount=discounts[0];
+    else if(discounts.length) t.discountNeedsReview=true;
   }
   return {transactions:out,rawText,card:'',lastDate:currentDate};
 }
 
-// Card artwork is compared locally; the user supplies a product name once.
-const cardTemplates=JSON.parse(localStorage.getItem('jjig_card_templates')||'[]');
-function persistCards(){localStorage.setItem('jjig_card_templates',JSON.stringify(cardTemplates));}
-async function attachCardArtwork(file, transactions){
-  const bitmap=await createImageBitmap(file);
-  try {
-    const scale=bitmap.width/945;
-    for(const t of transactions){
-      if(!t.hasCoordinates) continue;
-      const canvas=document.createElement('canvas');canvas.width=16;canvas.height=24;
-      const ctx=canvas.getContext('2d',{willReadFrequently:true});
-      const top=t.y-27*scale;
-      if(top<0 || top+104*scale>bitmap.height) continue;
-      ctx.drawImage(bitmap,44*scale,top,66*scale,104*scale,0,0,16,24);
-      const pixels=Array.from(ctx.getImageData(0,0,16,24).data).filter((_,i)=>i%4!==3);
-      // Blank/white regions are not card artwork.
-      if(pixels.filter(v=>v<180).length<pixels.length*0.25) continue;
-      let match=null,best=Infinity;
-      for(const template of cardTemplates){
-        const distance=pixels.reduce((sum,v,i)=>sum+Math.abs(v-template.pixels[i]),0)/pixels.length;
-        if(distance<best){best=distance;match=template;}
-      }
-      if(best>24 || !match){
-        match={id:crypto.randomUUID(),name:`카드 ${cardTemplates.length+1}`,pixels,image:canvas.toDataURL('image/png')};
-        cardTemplates.push(match);
-      }
-      t.cardId=match.id;t.card=match.name;t.cardImage=match.image;
-    }
-    persistCards();
-  }finally{bitmap.close();}
-}
-
 function signature(t){
-  return `${t.date}|${t.merchant.replace(/\s/g,'').toLowerCase()}|${t.amount}`;
+  return `${t.date}|${t.merchant.replace(/\s/g,'').toLowerCase()}|${t.amount}|${t.cardLast4||''}|${t.discount||0}`;
 }
 
 // Conservative overlap de-duplication:
@@ -227,7 +228,6 @@ async function runOCR(){
       const r=await worker.recognize(file);
       const parsed=parseTransactionsFromOCR(r,file,i,inheritedDate);
       inheritedDate=parsed.lastDate;
-      await attachCardArtwork(file,parsed.transactions);
       shots.push(parsed.transactions);
       state.ocrText.push(parsed.rawText);
       $('#ocrPreview').textContent += `\n\n━━ ${i+1}번째 스샷 ━━\n${parsed.rawText.slice(0,1800)}`;
@@ -236,6 +236,7 @@ async function runOCR(){
     await worker.terminate();
 
     const d=dedupeConsecutive(shots);
+    state.overlapRemoved=d.removed;
     state.pending=d.merged;
     renderReview(d.removed);
     $('#reviewPanel').classList.remove('hidden');
@@ -251,7 +252,7 @@ async function runOCR(){
   }
 }
 
-function renderReview(removed=0){
+function renderReview(removed=state.overlapRemoved){
   $('#reviewCount').textContent=`${state.pending.length}건`;
   const total=state.pending.reduce((s,t)=>s+t.amount,0);
   $('#reviewStats').innerHTML=`
@@ -261,19 +262,21 @@ function renderReview(removed=0){
   `;
   $('#reviewList').innerHTML=state.pending.map((t,i)=>`
     <div class="review-item" data-i="${i}">
+      <label class="review-select"><input type="checkbox" class="rv-selected" ${t.selected?'checked':''} aria-label="${escapeHtml(t.merchant)} 선택" /> 선택</label>
       <div>
         <input class="rv-merchant" value="${escapeHtml(t.merchant)}" />
         <div class="review-meta">
           <span class="chip">${t.date}</span>
-          ${t.cardImage?`<img src="${t.cardImage}" width="24" height="36" alt="카드 이미지" />`:''}
+          <span class="chip">${t.cardLast4 ? '끝 '+t.cardLast4 : '카드 확인 필요'}</span>
           <input class="rv-card" aria-label="카드 이름" placeholder="카드 이름 입력" value="${escapeHtml(t.card)}" style="max-width:150px" />
           <span class="chip">OCR ${t.confidence}%</span>
         </div>
       </div>
       <div style="text-align:right">
         <input class="rv-amount" type="number" value="${t.amount}" style="text-align:right;font-weight:850;max-width:120px" />
-        <select class="rv-category" style="border:0;background:#f0f0ec;border-radius:8px;padding:4px;margin-top:4px">
-          ${['식비','카페','편의점','교통','쇼핑','취미','생활','의료','교육','기타'].map(c=>`<option ${c===t.category?'selected':''}>${c}</option>`).join('')}
+        <label class="discount-field">할인 <input class="rv-discount" aria-label="할인금액" type="number" min="0" max="${t.amount}" value="${t.discount||0}" />원 ${t.discountNeedsReview?'· 확인 필요':''}</label>
+        <select aria-label="업종" class="rv-category" style="border:0;background:#f0f0ec;border-radius:8px;padding:4px;margin-top:4px">
+          ${CATEGORIES.map(c=>`<option ${c===t.category?'selected':''}>${c}</option>`).join('')}
         </select>
       </div>
     </div>
@@ -281,27 +284,30 @@ function renderReview(removed=0){
 }
 
 function collectReview(){
-  $$('.review-item').forEach(el=>{
-    const i=Number(el.dataset.i);
-    state.pending[i].merchant=el.querySelector('.rv-merchant').value.trim()||'업체명 확인 필요';
-    state.pending[i].amount=Number(el.querySelector('.rv-amount').value)||0;
-    state.pending[i].category=el.querySelector('.rv-category').value;
-    const name=el.querySelector('.rv-card').value.trim();
-    const t=state.pending[i];
-    if(name && name!==el.querySelector('.rv-card').defaultValue){
-      const template=cardTemplates.find(c=>c.id===t.cardId);
-      if(template) template.name=name;
-      state.pending.filter(x=>x.cardId && x.cardId===t.cardId).forEach(x=>x.card=name);
-      state.txs.filter(x=>x.cardId && x.cardId===t.cardId).forEach(x=>x.card=name);
-      t.card=name;
-    }
-  });
-  persistCards();
+  for(const el of $$('.review-item')){
+    const t=state.pending[Number(el.dataset.i)];
+    t.merchant=el.querySelector('.rv-merchant').value.trim()||'업체명 확인 필요';
+    t.amount=Number(el.querySelector('.rv-amount').value);
+    t.discount=Number(el.querySelector('.rv-discount').value);
+    t.selected=el.querySelector('.rv-selected').checked;
+    const category=el.querySelector('.rv-category').value;
+    if(category!==t.category) rememberCategory(t.merchant,category);
+    t.category=category;
+    t.card=el.querySelector('.rv-card').value.trim();
+    if(t.cardLast4 && t.card){cardNames[t.cardLast4]=t.card;}
+  }
+  localStorage.setItem('jjig_card_names',JSON.stringify(cardNames));
+}
+function validTransaction(t){return Number.isSafeInteger(t.amount)&&t.amount>0&&Number.isSafeInteger(t.discount??0)&&(t.discount??0)>=0&&(t.discount??0)<=t.amount;}
+function monthlyTotals(txs,ym){
+  return txs.filter(t=>t.date.startsWith(ym)).reduce((sum,t)=>{
+    sum.gross+=Number(t.amount)||0;sum.discount+=Number(t.discount)||0;
+    sum.net=sum.gross-sum.discount;return sum;
+  },{gross:0,discount:0,net:0});
 }
 
 function groupCurrentMonth(){
-  const now=new Date();
-  const ym=`${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`;
+  const ym=state.month;
   const txs=state.txs.filter(t=>t.date.startsWith(ym)).sort((a,b)=>b.date.localeCompare(a.date));
   const days={};
   txs.forEach(t=>{
@@ -312,14 +318,16 @@ function groupCurrentMonth(){
 }
 
 function render(){
-  const now=new Date();
-  $('#monthLabel').textContent=`${now.getFullYear()}년 ${now.getMonth()+1}월 지출`;
+  const now=new Date(state.month+'-01T12:00:00');
+  $('#monthLabel').textContent=`${now.getFullYear()}년 ${now.getMonth()+1}월 최종지출`;
   const ym=`${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`;
   const prev=new Date(now.getFullYear(),now.getMonth()-1,1);
   const pym=`${prev.getFullYear()}-${String(prev.getMonth()+1).padStart(2,'0')}`;
 
-  const cur=state.txs.filter(t=>t.date.startsWith(ym)).reduce((s,t)=>s+t.amount,0);
-  const pre=state.txs.filter(t=>t.date.startsWith(pym)).reduce((s,t)=>s+t.amount,0);
+  const totals=monthlyTotals(state.txs,ym);
+  const cur=totals.net, pre=monthlyTotals(state.txs,pym).net;
+  $('#monthGross').textContent=fmt(totals.gross);
+  $('#monthDiscount').textContent=fmt(totals.discount);
   $('#monthTotal').textContent='₩'+new Intl.NumberFormat('ko-KR').format(cur);
   if(pre>0){
     const diff=cur-pre, pct=Math.round(Math.abs(diff)/pre*100);
@@ -332,7 +340,7 @@ function render(){
   $('#groupedList').innerHTML=Object.entries(days).map(([date,txs])=>{
     const groups={};
     txs.forEach(t=>{
-      const k=`${t.merchant}|${t.category}`;
+    const k=`${t.merchant}|${t.category}|${t.cardLast4||t.card||''}`;
       groups[k]??=[]; groups[k].push(t);
     });
     const dayTotal=txs.reduce((s,t)=>s+t.amount,0);
@@ -343,10 +351,10 @@ function render(){
         return `<div class="tx-row" data-ids="${g.map(x=>x.id).join(',')}">
           <div>
             <div class="tx-title">${escapeHtml(first.merchant)}</div>
-            <div class="tx-sub">${first.category}${first.card?' · '+escapeHtml(first.card):''}</div>
+            <div class="tx-sub">${escapeHtml(first.category)}${first.card?' · '+escapeHtml(first.card):''}</div>
           </div>
           <div>
-            <div class="tx-amount">${fmt(total)}</div>
+            <div class="tx-amount">${fmt(total)}</div><div class="discount-field">할인 ${fmt(g.reduce((sum,t)=>sum+(t.discount||0),0))}</div>
             ${g.length>1?`<div class="tx-count">${g.length}건 묶음 ›</div>`:''}
           </div>
         </div>`;
@@ -385,7 +393,7 @@ function openDetails(ids){
   $('#detailsList').innerHTML=arr.map(t=>`
     <div class="detail-row">
       <div>
-        <b>${fmt(t.amount)}</b>
+        <b>${fmt(t.amount)}</b><div class="discount-field">할인 ${fmt(t.discount||0)} · 최종 ${fmt(t.amount-(t.discount||0))}</div>
         <div class="tx-sub">${t.date} · ${t.category}${t.card?' · '+escapeHtml(t.card):''}</div>
       </div>
       <div class="detail-actions">
@@ -408,7 +416,8 @@ function openEdit(id=null){
   $('#editDate').value=t?.date||today();
   $('#editMerchant').value=t?.merchant||'';
   $('#editAmount').value=t?.amount||'';
-  $('#editCategory').value=t?.category||'기타';
+  $('#editDiscount').value=t?.discount||0;
+  $('#editCategory').value=t?.category||'미분류';
   $('#editCard').value=t?.card||'';
   $('#editDialog').showModal();
 }
@@ -437,7 +446,8 @@ $('#cancelImportBtn').onclick=()=>{
 };
 $('#saveReviewedBtn').onclick=()=>{
   collectReview();
-  const clean=state.pending.filter(t=>t.amount>0);
+  if(state.pending.some(t=>!validTransaction(t))){toast('결제금액과 할인금액을 확인해주세요');return;}
+  const clean=state.pending.map(({selected,...t})=>t);
   state.txs.push(...clean);
   save();
   state.pending=[]; state.files=[];
@@ -448,7 +458,10 @@ $('#saveReviewedBtn').onclick=()=>{
 };
 $('#manualAddBtn').onclick=()=>openEdit();
 $('#saveEditBtn').onclick=()=>{
+  const original=state.txs.find(x=>x.id===state.editingId);
   const t={
+    ...original,
+    discount:Number($('#editDiscount').value),
     id:state.editingId||crypto.randomUUID(),
     date:$('#editDate').value||today(),
     merchant:$('#editMerchant').value.trim()||'미입력',
@@ -457,6 +470,9 @@ $('#saveEditBtn').onclick=()=>{
     card:$('#editCard').value.trim(),
     sourceName:'manual',confidence:100
   };
+  if(t.category==='미분류') t.category=categoryFor(t.merchant);
+  if(!validTransaction(t)){toast('결제금액과 할인금액을 확인해주세요');return;}
+  rememberCategory(t.merchant,t.category);
   if(state.editingId){
     state.txs=state.txs.map(x=>x.id===state.editingId?t:x);
   }else state.txs.push(t);
@@ -469,8 +485,22 @@ $('#settingsBtn').onclick=()=>{
   if(ok){ state.txs=[]; save(); toast('전체 삭제 완료'); }
 };
 
+$('#appVersion').textContent='v'+APP_VERSION;
+$('#monthPicker').value=state.month;
+$('#monthPicker').onchange=e=>{if(/^\d{4}-\d{2}$/.test(e.target.value)){state.month=e.target.value;render();}};
+$('#editMerchant').onchange=()=>{$('#editCategory').value=categoryFor($('#editMerchant').value);};
+$('#editCategory').innerHTML=CATEGORIES.map(c=>'<option>'+c+'</option>').join('');
+$('#bulkCategory').innerHTML=CATEGORIES.filter(c=>c!=='미분류').map(c=>'<option>'+c+'</option>').join('');
+$('#selectUnclassified').onclick=()=>{collectReview();state.pending.forEach(t=>t.selected=t.category==='미분류');renderReview();};
+$('#applyBulkCategory').onclick=()=>{
+  collectReview();const category=$('#bulkCategory').value;
+  const selected=state.pending.filter(t=>t.selected);
+  if(!selected.length){toast('분류할 항목을 선택해주세요');return;}
+  selected.forEach(t=>{t.category=category;rememberCategory(t.merchant,category);t.selected=false;});
+  state.pending.filter(t=>t.category==='미분류').forEach(t=>t.category=categoryFor(t.merchant));
+  renderReview();toast(selected.length+'건 분류 완료');
+};
 if('serviceWorker' in navigator){
   window.addEventListener('load',()=>navigator.serviceWorker.register('./sw.js').catch(console.warn));
 }
 render();
-

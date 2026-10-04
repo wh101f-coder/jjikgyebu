@@ -17,13 +17,14 @@
     <header class="topbar">
       <div>
         <div class="eyebrow">SCREENSHOT LEDGER</div>
-        <h1>찍계부</h1>
+        <h1>찍계부 <span id="appVersion" class="app-version">v1.0.2</span></h1>
       </div>
       <button class="icon-btn" id="settingsBtn" aria-label="설정">•••</button>
     </header>
 
     <main>
       <section class="hero card">
+        <label class="month-picker">조회 월 <input id="monthPicker" type="month" aria-label="조회 월" /></label>
         <div class="hero-head">
           <div>
             <div class="muted" id="monthLabel"></div>
@@ -31,6 +32,7 @@
           </div>
           <div class="delta-badge" id="monthDelta">지난달 비교 준비중</div>
         </div>
+        <div class="monthly-breakdown"><span>총 사용금액 <b id="monthGross">0원</b></span><span>이번 달 받은 할인 <b id="monthDiscount">0원</b></span></div>
         <div class="hero-actions">
           <label class="primary-action">
             <input id="imageInput" type="file" accept="image/*" multiple />
@@ -69,6 +71,7 @@
           <div class="pill" id="reviewCount">0건</div>
         </div>
         <div id="reviewStats" class="stats-grid"></div>
+        <div class="bulk-tools"><button id="selectUnclassified" class="mini-btn">미분류 모두 선택</button><select id="bulkCategory" aria-label="일괄 분류 업종"></select><button id="applyBulkCategory" class="mini-btn">선택 항목 일괄 분류</button></div>
         <div id="reviewList" class="review-list"></div>
         <button id="saveReviewedBtn" class="full-btn">이대로 등록</button>
       </section>
@@ -110,6 +113,7 @@
       <label>날짜<input id="editDate" type="date" required /></label>
       <label>업체명<input id="editMerchant" type="text" placeholder="예: GS25" required /></label>
       <label>금액<input id="editAmount" type="number" inputmode="numeric" placeholder="0" required /></label>
+      <label>할인금액<input id="editDiscount" type="number" min="0" inputmode="numeric" value="0" /></label>
       <label>카테고리
         <select id="editCategory">
           <option>식비</option><option>카페</option><option>편의점</option>
