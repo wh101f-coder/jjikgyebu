@@ -1,12 +1,13 @@
 
-const APP_VERSION = '1.0.3';
-const CATEGORIES = ['미분류','배달음식','전기차 충전','자동차·타이어','장보기','빵·간식','통신','구독','관리비','세금','보험','인형뽑기','식비','카페','편의점','교통','쇼핑','취미','생활','의료','교육','기타'];
+const APP_VERSION = '1.0.4';
+const CATEGORIES = ['미분류','취미','친구모임','코인노래방','인형뽑기','배달음식','전기차 충전','자동차·타이어','장보기','빵·간식','통신','구독','관리비','세금','보험','식비','카페','편의점','교통','쇼핑','생활','의료','교육','기타'];
 const merchantMappings = JSON.parse(localStorage.getItem('jjig_merchant_mappings')||'{}');
 const cardNames = JSON.parse(localStorage.getItem('jjig_card_names')||'{}');
 const merchantKey = name => normalizeMerchant(name).replace(/\s/g,'').toLowerCase();
 function rememberCategory(name, category){
   if(category==='미분류' || !name || name==='업체명 확인 필요') return;
   merchantMappings[merchantKey(name)]=category;
+  merchantMappings[merchantKey(displayMerchant(name))]=category;
   localStorage.setItem('jjig_merchant_mappings',JSON.stringify(merchantMappings));
 }
 const $ = (s)=>document.querySelector(s);
@@ -26,7 +27,8 @@ let state = {
   ocrText: [],
   month: today().slice(0,7),
   overlapRemoved: 0,
-  importMode: 'ocr'
+  importMode: 'ocr',
+  reviewFilters: new Set()
 };
 
 const issuerKeywords = [
@@ -45,11 +47,15 @@ function toast(msg){
 function categoryFor(name=''){
   const key=merchantKey(name);
   if(Object.hasOwn(merchantMappings,key)) return merchantMappings[key];
+  const brandKey=merchantKey(displayMerchant(name));
+  if(Object.hasOwn(merchantMappings,brandKey))return merchantMappings[brandKey];
   const rules=[
+    ['코인노래방',/코인노래|코인뮤직|^코노(?:$|[^a-z])/],
+    ['인형뽑기',/인형뽑기/],
     ['배달음식',/우아한형제들|배민페이/],
     ['전기차 충전',/전기차충전|지에스차지비/],
     ['자동차·타이어',/넥센타이어/],
-    ['장보기',/^gs더프레시/],
+    ['장보기',/^(gs|지에스)더프레시/],
     ['빵·간식',/파리바게뜨|한국야쿠르트/],
     ['교통',/쏘카|^교통-(버스|지하철)/],
     ['통신',/^kt통신요금|딜라이브/],
@@ -77,6 +83,39 @@ function normalizeMerchant(s=''){
     .replace(/^[^\p{L}\p{N}]+|[^\p{L}\p{N})]+$/gu,'')
     .replace(/\(주\)|주식회사|유한회사/gi,'')
     .trim();
+}
+
+// Presentation only: retain original merchant text and importIdentity for reconciliation.
+function displayMerchant(name=''){
+  const key=merchantKey(name);
+  const brands=[
+    [/^(씨유|cu(?=$|[^a-z]))/,'CU편의점'],
+    [/^(gs|지에스)더프레시/,'GS더프레시'],
+    [/^(gs25|지에스25)/,'GS25편의점'],
+    [/^세븐일레븐/,'세븐일레븐'],[/^이마트24/,'이마트24'],
+    [/^스타벅스/,'스타벅스'],[/^커피빈(?:코리아)?/,'커피빈'],
+    [/^이디야/,'이디야커피'],[/^파리바게뜨/,'파리바게뜨'],
+    [/^우아한형제들/,'배달의민족']
+  ];
+  return brands.find(([pattern])=>pattern.test(key))?.[1]||name;
+}
+function cardLabel(t){
+  const key=t.issuer?`${t.issuer}:${t.cardLast4}`:t.cardLast4;
+  const generic=value=>!value||value===`카드 ${t.cardLast4}`||value===`${t.issuer} ${t.cardLast4}`;
+  if(cardNames[key]&&!generic(cardNames[key]))return cardNames[key];
+  if(t.card&&!generic(t.card))return t.card;
+  if(t.issuer==='우리카드'&&t.cardLast4==='0322')return '우리 넥센타이어';
+  if(t.issuer==='우리카드'&&t.cardLast4==='9569')return '우리 카드의정석';
+  if(t.issuer==='KB국민카드')return 'KB 딜라이브';
+  if(t.issuer==='현대카드')return '현대 무신사';
+  return t.card||`${t.issuer||'카드'} ${t.cardLast4||''}`.trim();
+}
+function visibleReviewEntries(){
+  return state.pending.map((t,i)=>({t,i})).filter(({t})=>!state.reviewFilters.size||state.reviewFilters.has(displayMerchant(t.merchant)));
+}
+function toggleReviewMerchant(name){
+  if(state.reviewFilters.has(name))state.reviewFilters.delete(name);else state.reviewFilters.add(name);
+  state.pending.forEach(t=>t.selected=state.reviewFilters.has(displayMerchant(t.merchant)));
 }
 
 function parseDate(text, fallbackDate){
@@ -277,15 +316,19 @@ function renderReview(removed=state.overlapRemoved){
     <div class="stat"><strong>${removed}</strong><span>겹침 제외</span></div>
     <div class="stat"><strong>${fmt(total)}</strong><span>합계</span></div>
   `;
-  $('#reviewList').innerHTML=state.pending.map((t,i)=>`
+  const visible=visibleReviewEntries();
+  $('#reviewFilterStatus').textContent=`전체 ${state.pending.length}건 중 ${visible.length}건 표시 · ${state.pending.filter(t=>t.selected).length}건 선택`;
+  $('#clearReviewFilters').hidden=!state.reviewFilters.size;
+  $('#saveReviewedBtn').textContent=state.importMode==='excel'?`전체 ${state.pending.length}건 등록 처리`:`전체 ${state.pending.length}건 등록`;
+  $('#reviewList').innerHTML=visible.map(({t,i})=>`
     <div class="review-item" data-i="${i}">
       <label class="review-select"><input type="checkbox" class="rv-selected" ${t.selected?'checked':''} aria-label="${escapeHtml(t.merchant)} 선택" /> 선택</label>
       <div>
-        <input class="rv-merchant" value="${escapeHtml(t.merchant)}" />
+        <input class="rv-merchant" aria-label="업체명" value="${escapeHtml(displayMerchant(t.merchant))}" />
         <div class="review-meta">
           <span class="chip">${t.date}</span>
           <span class="chip">${t.cardLast4 ? '끝 '+t.cardLast4 : '카드 확인 필요'}</span>
-          <input class="rv-card" aria-label="카드 이름" placeholder="카드 이름 입력" value="${escapeHtml(t.card)}" style="max-width:150px" />
+          <input class="rv-card" aria-label="카드 이름" placeholder="카드 이름 입력" value="${escapeHtml(cardLabel(t))}" style="max-width:150px" />
           <span class="chip">${t.sourceType==='excel'?'엑셀 · '+escapeHtml(t.issuer):'OCR '+t.confidence+'%'}</span>
         </div>
       </div>
@@ -305,7 +348,8 @@ function renderReview(removed=state.overlapRemoved){
 function collectReview(){
   for(const el of $$('.review-item')){
     const t=state.pending[Number(el.dataset.i)];
-    t.merchant=el.querySelector('.rv-merchant').value.trim()||'업체명 확인 필요';
+    const merchantInput=el.querySelector('.rv-merchant');
+    if(merchantInput.value!==merchantInput.defaultValue){t.originalMerchant??=t.merchant;t.merchant=merchantInput.value.trim()||'업체명 확인 필요';}
     const nextAmount=Number(el.querySelector('.rv-amount').value);
     if(t.sourceType==='excel'&&(nextAmount!==t.amount||Number(el.querySelector('.rv-discount').value)!==t.discount)){t.billedAmount=null;t.dueConfirmed=false;}
     t.amount=nextAmount;
@@ -317,8 +361,11 @@ function collectReview(){
     const category=el.querySelector('.rv-category').value;
     if(category!==t.category) rememberCategory(t.merchant,category);
     t.category=category;
-    t.card=el.querySelector('.rv-card').value.trim();
-    if(t.cardLast4 && t.card){cardNames[t.issuer ? t.issuer+':'+t.cardLast4 : t.cardLast4]=t.card;}
+    const cardInput=el.querySelector('.rv-card');
+    if(cardInput.value!==cardInput.defaultValue){
+      t.card=cardInput.value.trim();
+      if(t.cardLast4&&t.card)cardNames[t.issuer ? t.issuer+':'+t.cardLast4 : t.cardLast4]=t.card;
+    }
   }
   localStorage.setItem('jjig_card_names',JSON.stringify(cardNames));
 }
@@ -365,7 +412,7 @@ function render(){
   $('#groupedList').innerHTML=Object.entries(days).map(([date,txs])=>{
     const groups={};
     txs.forEach(t=>{
-    const k=`${t.merchant}|${t.category}|${t.issuer||''}|${t.cardLast4||t.card||''}`;
+    const k=`${displayMerchant(t.merchant)}|${t.category}|${t.issuer||''}|${t.cardLast4||t.card||''}`;
       groups[k]??=[]; groups[k].push(t);
     });
     const dayTotal=txs.reduce((s,t)=>s+t.amount,0);
@@ -375,8 +422,8 @@ function render(){
         const total=g.reduce((s,t)=>s+t.amount,0), first=g[0];
         return `<div class="tx-row" data-ids="${g.map(x=>x.id).join(',')}">
           <div>
-            <div class="tx-title">${escapeHtml(first.merchant)}</div>
-            <div class="tx-sub">${escapeHtml(first.category)}${first.card?' · '+escapeHtml(first.card):''}</div>
+            <div class="tx-title">${escapeHtml(displayMerchant(first.merchant))}</div>
+            <div class="tx-sub">${escapeHtml(first.category)} · ${escapeHtml(cardLabel(first))}${first.cardLast4?' · '+first.cardLast4:''}</div>
           </div>
           <div>
             <div class="tx-amount">${fmt(total)}</div><div class="discount-field">할인 ${fmt(g.reduce((sum,t)=>sum+(t.discount||0),0))}</div>
@@ -415,12 +462,12 @@ function openDetails(ids){
   const arr=ids.map(id=>state.txs.find(t=>t.id===id)).filter(Boolean);
   if(!arr.length) return;
   const total=arr.reduce((s,t)=>s+t.amount,0);
-  $('#detailsTitle').textContent=`${arr[0].merchant} · ${fmt(total)}`;
+  $('#detailsTitle').textContent=`${displayMerchant(arr[0].merchant)} · ${fmt(total)}`;
   $('#detailsList').innerHTML=arr.map(t=>`
     <div class="detail-row">
       <div>
         <b>${fmt(t.amount)}</b><div class="discount-field">할인 ${fmt(t.discount||0)} · 최종 ${fmt(t.amount-(t.discount||0))}</div>
-        <div class="tx-sub">${t.date} · ${t.category}${t.card?' · '+escapeHtml(t.card):''}</div>
+        <div class="tx-sub">${t.date} · ${escapeHtml(t.category)} · ${escapeHtml(cardLabel(t))}${t.cardLast4?' · '+t.cardLast4:''}</div>
       </div>
       <div class="detail-actions">
         <button class="mini-btn edit-one" data-id="${t.id}">수정</button>
@@ -444,7 +491,7 @@ function openEdit(id=null){
   $('#editAmount').value=t?.amount||'';
   $('#editDiscount').value=t?.discount||0;
   $('#editCategory').value=t?.category||'미분류';
-  $('#editCard').value=t?.card||'';
+  $('#editCard').value=t?cardLabel(t):'';
   $('#editDialog').showModal();
 }
 
@@ -453,6 +500,7 @@ function escapeHtml(s=''){
 }
 
 $('#imageInput').addEventListener('change', e=>{
+  state.reviewFilters.clear();
   state.importMode='ocr';state.pending=[];
   $('#excelPanel').classList.add('hidden');
   $('#excelReviewSummary').classList.add('hidden');$('#excelConflictTools').classList.add('hidden');$('#merchantGroups').innerHTML='';
@@ -502,6 +550,10 @@ $('#saveEditBtn').onclick=()=>{
   };
   if(t.category==='미분류') t.category=categoryFor(t.merchant);
   if(!validTransaction(t)){toast('결제금액과 할인금액을 확인해주세요');return;}
+  if(original?.cardLast4&&t.card!==cardLabel(original)&&t.card){
+    cardNames[original.issuer?original.issuer+':'+original.cardLast4:original.cardLast4]=t.card;
+    localStorage.setItem('jjig_card_names',JSON.stringify(cardNames));
+  }
   rememberCategory(t.merchant,t.category);
   if(state.editingId){
     state.txs=state.txs.map(x=>x.id===state.editingId?t:x);
@@ -521,7 +573,8 @@ $('#monthPicker').onchange=e=>{if(/^\d{4}-\d{2}$/.test(e.target.value)){state.mo
 $('#editMerchant').onchange=()=>{$('#editCategory').value=categoryFor($('#editMerchant').value);};
 $('#editCategory').innerHTML=CATEGORIES.map(c=>'<option>'+c+'</option>').join('');
 $('#bulkCategory').innerHTML=CATEGORIES.filter(c=>c!=='미분류').map(c=>'<option>'+c+'</option>').join('');
-$('#selectUnclassified').onclick=()=>{collectReview();state.pending.forEach(t=>t.selected=t.category==='미분류');renderReview();};
+$('#clearReviewFilters').onclick=()=>{collectReview();state.reviewFilters.clear();state.pending.forEach(t=>t.selected=false);renderReview();};
+$('#selectUnclassified').onclick=()=>{collectReview();state.reviewFilters=new Set(state.pending.filter(t=>t.category==='미분류').map(t=>displayMerchant(t.merchant)));state.pending.forEach(t=>t.selected=t.category==='미분류');renderReview();};
 $('#applyBulkCategory').onclick=()=>{
   collectReview();const category=$('#bulkCategory').value;
   const selected=state.pending.filter(t=>t.selected);

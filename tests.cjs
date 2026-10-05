@@ -44,3 +44,35 @@ test('invalid or ambiguous discounts require review and do not become payments',
 test('version and cache version remain synchronized',()=>{
  const version=run('APP_VERSION');assert.ok(fs.readFileSync(__dirname+'/sw.js','utf8').includes('v'+version));assert.ok(fs.readFileSync(__dirname+'/index.html','utf8').includes('v'+version));
 });
+test('merchant labels shorten known brands only and preserve source',()=>{
+ assert.equal(run("displayMerchant('씨유(CU)운정해링턴점')"),'CU편의점');
+ assert.equal(run("displayMerchant('지에스 더프레시 운정점')"),'GS더프레시');
+ assert.equal(run("displayMerchant('GS더프레시 운정물향기점')"),'GS더프레시');
+ assert.equal(run("displayMerchant('알수없는상점 강남점')"),'알수없는상점 강남점');
+ run("state.pending=[{merchant:'씨유(CU)테스트점',amount:1000}];displayMerchant(state.pending[0].merchant)");
+ assert.equal(run('state.pending[0].merchant'),'씨유(CU)테스트점');
+});
+test('review filters union and deselect to full list without losing rows',()=>{
+ run("state.pending=[{merchant:'A',amount:1},{merchant:'A',amount:2},{merchant:'B',amount:3},{merchant:'C',amount:4}];state.reviewFilters.clear();toggleReviewMerchant('A')");
+ assert.equal(run('visibleReviewEntries().length'),2);
+ run("toggleReviewMerchant('B')");assert.equal(run('visibleReviewEntries().length'),3);
+ assert.equal(run('visibleReviewEntries()[2].i'),2);
+ run("toggleReviewMerchant('A')");assert.equal(run('visibleReviewEntries().length'),1);
+ assert.equal(run('state.pending[0].selected'),false);
+ run("toggleReviewMerchant('B')");assert.equal(run('visibleReviewEntries().length'),4);
+ assert.equal(run('state.pending.reduce((sum,t)=>sum+t.amount,0)'),10);
+});
+test('card names use issuer plus suffix and respect user overrides',()=>{
+ assert.equal(run("cardLabel({issuer:'우리카드',cardLast4:'0322',card:'우리카드 0322'})"),'우리 넥센타이어');
+ assert.equal(run("cardLabel({issuer:'우리카드',cardLast4:'9569',card:'카드 9569'})"),'우리 카드의정석');
+ assert.equal(run("cardLabel({issuer:'KB국민카드',cardLast4:'0322'})"),'KB 딜라이브');
+ assert.equal(run("cardLabel({issuer:'현대카드',cardLast4:'0322'})"),'현대 무신사');
+ assert.equal(run("cardLabel({issuer:'우리카드',cardLast4:'9535'})"),'우리카드 9535');
+ run("cardNames['우리카드:0322']='내 카드'");assert.equal(run("cardLabel({issuer:'우리카드',cardLast4:'0322'})"),'내 카드');
+});
+test('hobby and social categories, shared brand manual classification',()=>{
+ assert.equal(run("CATEGORIES.includes('취미')&&CATEGORIES.includes('친구모임')&&CATEGORIES.includes('코인노래방')"),true);
+ assert.equal(run("categoryFor('코인노래방 테스트점')"),'코인노래방');
+ run("rememberCategory('씨유(CU)첫번째점','친구모임')");
+ assert.equal(run("categoryFor('씨유(CU)두번째점')"),'친구모임');
+});

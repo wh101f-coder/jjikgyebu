@@ -1,6 +1,15 @@
 const http=require('node:http'),fs=require('node:fs'),path=require('node:path');
 const root=__dirname;
 http.createServer((req,res)=>{
+ if(req.url==='/filter-test'){
+  const html=fs.readFileSync(path.join(root,'index.html'),'utf8');
+  const fixture=`<script>
+  state.txs=[];state.importMode='excel';state.reviewFilters.clear();
+  state.pending=Array.from({length:90},(_,i)=>({id:'filter-'+i,date:'2026-10-01',merchant:i<34?'가상놀이A':i<36?'가상놀이B':i<60?'씨유(CU)테스트점':'지에스 더프레시 테스트점',amount:1000,discount:0,category:i<36?'미분류':'장보기',issuer:i<60?'우리카드':'현대카드',cardLast4:i<34?'0322':i<60?'9569':'1111',card:i<60?'우리카드 '+(i<34?'0322':'9569'):'현대카드 1111',sourceType:'excel',action:'new',status:'이용'}));
+  render();renderReview();document.querySelector('#reviewPanel').classList.remove('hidden');
+  </script>`;
+  res.setHeader('Content-Type','text/html; charset=utf-8');return res.end(html.replace('</body>',fixture+'</body>'));
+ }
  if(req.url==='/review-test'){
   const html=fs.readFileSync(path.join(root,'index.html'),'utf8');
   const fixture=`<script>
