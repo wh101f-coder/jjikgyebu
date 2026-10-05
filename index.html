@@ -16,8 +16,8 @@
   <div id="app">
     <header class="topbar">
       <div>
-        <div class="eyebrow">SCREENSHOT LEDGER</div>
-        <h1>찍계부 <span id="appVersion" class="app-version">v1.0.2</span></h1>
+        <div class="eyebrow">MY LEDGER</div>
+        <h1>찍계부 <span id="appVersion" class="app-version">v1.0.3</span></h1>
       </div>
       <button class="icon-btn" id="settingsBtn" aria-label="설정">•••</button>
     </header>
@@ -35,6 +35,13 @@
         <div class="monthly-breakdown"><span>총 사용금액 <b id="monthGross">0원</b></span><span>이번 달 받은 할인 <b id="monthDiscount">0원</b></span></div>
         <div class="hero-actions">
           <label class="primary-action">
+            <input id="excelInput" aria-label="카드 엑셀 파일" type="file" accept=".xls,.xlsx" />
+            <span class="camera">▦</span><span><strong>카드 엑셀 등록</strong><small>일주일·이주일·월별 내역 모두 가능</small></span>
+          </label>
+        </div>
+        <details class="photo-alternative"><summary>사진으로 등록</summary>
+        <div class="hero-actions">
+          <label class="primary-action">
             <input id="imageInput" type="file" accept="image/*" multiple />
             <span class="camera">📸</span>
             <span>
@@ -43,6 +50,27 @@
             </span>
           </label>
         </div>
+        </details>
+      </section>
+
+      <section id="excelPanel" class="card hidden">
+        <div class="section-title-row"><h2>엑셀 가져오기</h2><button id="cancelExcel" class="text-btn">닫기</button></div>
+        <p id="excelFileName" class="muted"></p>
+        <p class="muted">파일은 기기 안에서만 읽습니다. 카드사 파일을 한 개씩 등록해주세요.</p>
+        <div class="excel-fields">
+          <label>카드사<select id="excelIssuer"><option>우리카드</option><option>KB국민카드</option><option>기타카드</option></select></label>
+          <label>연도 없는 날짜의 기준 연도<input id="excelYear" type="number" min="2000" max="2100" /></label>
+          <label>시트<select id="excelSheet"></select></label>
+          <label>카드번호 열이 없을 때 끝 4자리<input id="excelCard" inputmode="numeric" maxlength="4" placeholder="예: 0322" /></label>
+          <label>명세서 청구월 (선택)<input id="excelBillingMonth" type="month" /></label>
+        </div>
+        <p class="muted">우리·국민 결제일은 14일 기준입니다. 청구월은 명세서에 표시된 경우만 선택하세요. 비워두면 이용일 기준 예상으로 표시합니다.</p>
+        <details id="excelMapping"><summary>열 연결 확인 / 다른 형식 지정</summary>
+          <label>제목 행 번호<input id="excelHeaderRow" type="number" min="1" value="2" /></label>
+          <button id="excelRemap" class="mini-btn">이 행에서 열 다시 찾기</button><div id="excelColumns" class="excel-fields"></div>
+        </details>
+        <button id="analyzeExcel" class="full-btn">선택한 설정으로 내역 읽기</button>
+        <div id="excelStatus" role="status" class="import-status"></div>
       </section>
 
       <section id="importPanel" class="card hidden">
@@ -71,6 +99,9 @@
           <div class="pill" id="reviewCount">0건</div>
         </div>
         <div id="reviewStats" class="stats-grid"></div>
+        <div id="excelReviewSummary" class="import-status hidden"></div>
+        <div id="excelConflictTools" class="bulk-tools hidden"><button id="skipExcelMatches" class="mini-btn">겹친 항목 모두 기존 거래로 처리</button></div>
+        <div id="merchantGroups" class="bulk-tools"></div>
         <div class="bulk-tools"><button id="selectUnclassified" class="mini-btn">미분류 모두 선택</button><select id="bulkCategory" aria-label="일괄 분류 업종"></select><button id="applyBulkCategory" class="mini-btn">선택 항목 일괄 분류</button></div>
         <div id="reviewList" class="review-list"></div>
         <button id="saveReviewedBtn" class="full-btn">이대로 등록</button>
@@ -88,9 +119,11 @@
         <div id="emptyState" class="empty">
           <div class="empty-icon">🧾</div>
           <strong>아직 등록된 지출이 없어요</strong>
-          <span>카드앱 스크린샷을 올리면 자동으로 정리합니다</span>
+          <span>카드사 엑셀 파일을 올리면 자동으로 정리합니다</span>
         </div>
       </section>
+
+      <section class="card billing-card"><h2>카드별 결제대금</h2><p class="muted">업로드한 내역만 합산합니다. 청구월 미지정 거래는 14일 결제 기준 예상이며, 실제 명세서와 다를 수 있습니다.</p><div id="billingSummary"></div></section>
 
       <section class="section">
         <div class="section-title-row">
@@ -142,7 +175,8 @@
 
   <div id="toast" class="toast"></div>
 
-  <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+  <script src="./excel-core.js"></script>
   <script src="./app.js"></script>
+  <script src="./excel-ui.js"></script>
 </body>
 </html>

@@ -1,6 +1,6 @@
 
-const APP_VERSION = '1.0.2';
-const CATEGORIES = ['미분류','배달음식','전기차 충전','식비','카페','편의점','교통','쇼핑','취미','생활','의료','교육','기타'];
+const APP_VERSION = '1.0.3';
+const CATEGORIES = ['미분류','배달음식','전기차 충전','자동차·타이어','장보기','빵·간식','통신','구독','관리비','세금','보험','인형뽑기','식비','카페','편의점','교통','쇼핑','취미','생활','의료','교육','기타'];
 const merchantMappings = JSON.parse(localStorage.getItem('jjig_merchant_mappings')||'{}');
 const cardNames = JSON.parse(localStorage.getItem('jjig_card_names')||'{}');
 const merchantKey = name => normalizeMerchant(name).replace(/\s/g,'').toLowerCase();
@@ -25,7 +25,8 @@ let state = {
   editingId: null,
   ocrText: [],
   month: today().slice(0,7),
-  overlapRemoved: 0
+  overlapRemoved: 0,
+  importMode: 'ocr'
 };
 
 const issuerKeywords = [
@@ -45,6 +46,20 @@ function categoryFor(name=''){
   const key=merchantKey(name);
   if(Object.hasOwn(merchantMappings,key)) return merchantMappings[key];
   const rules=[
+    ['배달음식',/우아한형제들|배민페이/],
+    ['전기차 충전',/전기차충전|지에스차지비/],
+    ['자동차·타이어',/넥센타이어/],
+    ['장보기',/^gs더프레시/],
+    ['빵·간식',/파리바게뜨|한국야쿠르트/],
+    ['교통',/쏘카|^교통-(버스|지하철)/],
+    ['통신',/^kt통신요금|딜라이브/],
+    ['관리비',/^아파트관리비/],
+    ['세금',/재산세/],
+    ['보험',/^현대해상/],
+    ['의료',/약국$/],
+    ['구독',/^chatgpt/],
+    ['취미',/^짱오락실/],
+    ['카페',/커피빈코리아/],
     ['배달음식',/^(우아한형제들|배달의민족|배민|쿠팡이츠|요기요)$/],
     ['전기차 충전',/^(지에스차지비|차지비|gs차지비)$/],
     ['카페',/^(스타벅스|투썸플레이스|메가커피|컴포즈커피|빽다방|이디야)/],
@@ -211,6 +226,7 @@ async function runOCR(){
 
   let worker;
   try{
+    if(typeof Tesseract==='undefined') await loadExternalScript('https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js');
     worker=await Tesseract.createWorker(['kor','eng'], 1, {
       logger:m=>{
         if(m.status==='recognizing text'){
@@ -253,6 +269,7 @@ async function runOCR(){
 }
 
 function renderReview(removed=state.overlapRemoved){
+  $('#reviewStats').classList.toggle('hidden',state.importMode==='excel');
   $('#reviewCount').textContent=`${state.pending.length}건`;
   const total=state.pending.reduce((s,t)=>s+t.amount,0);
   $('#reviewStats').innerHTML=`
@@ -269,36 +286,43 @@ function renderReview(removed=state.overlapRemoved){
           <span class="chip">${t.date}</span>
           <span class="chip">${t.cardLast4 ? '끝 '+t.cardLast4 : '카드 확인 필요'}</span>
           <input class="rv-card" aria-label="카드 이름" placeholder="카드 이름 입력" value="${escapeHtml(t.card)}" style="max-width:150px" />
-          <span class="chip">OCR ${t.confidence}%</span>
+          <span class="chip">${t.sourceType==='excel'?'엑셀 · '+escapeHtml(t.issuer):'OCR '+t.confidence+'%'}</span>
         </div>
       </div>
       <div style="text-align:right">
         <input class="rv-amount" type="number" value="${t.amount}" style="text-align:right;font-weight:850;max-width:120px" />
-        <label class="discount-field">할인 <input class="rv-discount" aria-label="할인금액" type="number" min="0" max="${t.amount}" value="${t.discount||0}" />원 ${t.discountNeedsReview?'· 확인 필요':''}</label>
+        <label class="discount-field">할인 <input class="rv-discount" aria-label="할인금액" type="number" value="${t.discount||0}" />원 ${t.discountNeedsReview?'· 확인 필요':''}${t.discountKnown===false?'· 미확인':''}</label>
+        ${t.sourceType==='excel'?`<div class="tx-sub">${t.status}${t.installments>1?' · '+t.installments+'개월 할부':''}</div><label class="decision-label">등록 처리<select class="rv-action" aria-label="등록 처리"><option value="new" ${t.action==='new'?'selected':''}>새 거래로 추가</option><option value="skip" ${t.action==='skip'?'selected':''}>기존 거래 / 제외</option>${t.matchId?`<option value="review" ${t.action==='review'?'selected':''}>겹침 확인 필요</option><option value="update" ${t.action==='update'?'selected':''}>기존 거래 갱신</option>`:''}</select></label>${t.matchId?`<small>${escapeHtml(t.matchReason)} · 기존 할인 ${fmt(t.previousDiscount)}</small>`:''}`:''}
         <select aria-label="업종" class="rv-category" style="border:0;background:#f0f0ec;border-radius:8px;padding:4px;margin-top:4px">
           ${CATEGORIES.map(c=>`<option ${c===t.category?'selected':''}>${c}</option>`).join('')}
         </select>
       </div>
     </div>
   `).join('');
+  if(typeof renderExcelReviewExtras==='function')renderExcelReviewExtras();
 }
 
 function collectReview(){
   for(const el of $$('.review-item')){
     const t=state.pending[Number(el.dataset.i)];
     t.merchant=el.querySelector('.rv-merchant').value.trim()||'업체명 확인 필요';
-    t.amount=Number(el.querySelector('.rv-amount').value);
-    t.discount=Number(el.querySelector('.rv-discount').value);
+    const nextAmount=Number(el.querySelector('.rv-amount').value);
+    if(t.sourceType==='excel'&&(nextAmount!==t.amount||Number(el.querySelector('.rv-discount').value)!==t.discount)){t.billedAmount=null;t.dueConfirmed=false;}
+    t.amount=nextAmount;
+    const discountInput=el.querySelector('.rv-discount');
+    if(discountInput.value!==discountInput.defaultValue)t.discountKnown=true;
+    t.discount=Number(discountInput.value);
+    if(t.sourceType==='excel')t.action=el.querySelector('.rv-action').value;
     t.selected=el.querySelector('.rv-selected').checked;
     const category=el.querySelector('.rv-category').value;
     if(category!==t.category) rememberCategory(t.merchant,category);
     t.category=category;
     t.card=el.querySelector('.rv-card').value.trim();
-    if(t.cardLast4 && t.card){cardNames[t.cardLast4]=t.card;}
+    if(t.cardLast4 && t.card){cardNames[t.issuer ? t.issuer+':'+t.cardLast4 : t.cardLast4]=t.card;}
   }
   localStorage.setItem('jjig_card_names',JSON.stringify(cardNames));
 }
-function validTransaction(t){return Number.isSafeInteger(t.amount)&&t.amount>0&&Number.isSafeInteger(t.discount??0)&&(t.discount??0)>=0&&(t.discount??0)<=t.amount;}
+function validTransaction(t){return Number.isSafeInteger(t.amount)&&t.amount!==0&&Number.isSafeInteger(t.discount??0)&&Math.abs(t.discount??0)<=Math.abs(t.amount)&&((t.discount??0)===0||Math.sign(t.discount)===Math.sign(t.amount));}
 function monthlyTotals(txs,ym){
   return txs.filter(t=>t.date.startsWith(ym)).reduce((sum,t)=>{
     sum.gross+=Number(t.amount)||0;sum.discount+=Number(t.discount)||0;
@@ -329,6 +353,7 @@ function render(){
   $('#monthGross').textContent=fmt(totals.gross);
   $('#monthDiscount').textContent=fmt(totals.discount);
   $('#monthTotal').textContent='₩'+new Intl.NumberFormat('ko-KR').format(cur);
+  if(state.txs.some(t=>t.date.startsWith(ym)&&t.discountKnown===false))$('#monthLabel').textContent+=' (할인 미확인 포함)';
   if(pre>0){
     const diff=cur-pre, pct=Math.round(Math.abs(diff)/pre*100);
     $('#monthDelta').textContent=`지난달보다 ${pct}% ${diff>=0?'↑':'↓'}`;
@@ -340,7 +365,7 @@ function render(){
   $('#groupedList').innerHTML=Object.entries(days).map(([date,txs])=>{
     const groups={};
     txs.forEach(t=>{
-    const k=`${t.merchant}|${t.category}|${t.cardLast4||t.card||''}`;
+    const k=`${t.merchant}|${t.category}|${t.issuer||''}|${t.cardLast4||t.card||''}`;
       groups[k]??=[]; groups[k].push(t);
     });
     const dayTotal=txs.reduce((s,t)=>s+t.amount,0);
@@ -364,13 +389,14 @@ function render(){
 
   $$('.tx-row').forEach(row=>row.addEventListener('click',()=>openDetails(row.dataset.ids.split(','))));
   renderCoach(cur,pre,ym);
+  if(typeof renderBilling==='function')renderBilling();
 }
 
 function renderCoach(cur,pre,ym){
   const monthly=state.txs.filter(t=>t.date.startsWith(ym));
   const cat={}; monthly.forEach(t=>cat[t.category]=(cat[t.category]||0)+t.amount);
   const top=Object.entries(cat).sort((a,b)=>b[1]-a[1])[0];
-  let msg='스크린샷을 몇 번만 등록하면 소비 패턴을 비교해드릴게요.';
+  let msg='이용내역을 등록하면 소비 패턴을 비교해드릴게요.';
   if(monthly.length>=3 && top){
     msg=`이번 달은 <b>${top[0]}</b> 지출이 가장 커요. ${fmt(top[1])}을 사용했습니다.`;
     if(pre>0 && cur>pre) msg+=` 현재 지난달 총지출보다 ${fmt(cur-pre)} 많습니다.`;
@@ -427,6 +453,9 @@ function escapeHtml(s=''){
 }
 
 $('#imageInput').addEventListener('change', e=>{
+  state.importMode='ocr';state.pending=[];
+  $('#excelPanel').classList.add('hidden');
+  $('#excelReviewSummary').classList.add('hidden');$('#excelConflictTools').classList.add('hidden');$('#merchantGroups').innerHTML='';
   state.files=Array.from(e.target.files||[]).sort((a,b)=>(a.lastModified||0)-(b.lastModified||0));
   if(!state.files.length) return;
   $('#importPanel').classList.remove('hidden');
@@ -446,6 +475,7 @@ $('#cancelImportBtn').onclick=()=>{
 };
 $('#saveReviewedBtn').onclick=()=>{
   collectReview();
+  if(state.importMode==='excel'){commitExcel();return;}
   if(state.pending.some(t=>!validTransaction(t))){toast('결제금액과 할인금액을 확인해주세요');return;}
   const clean=state.pending.map(({selected,...t})=>t);
   state.txs.push(...clean);
