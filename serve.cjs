@@ -1,12 +1,17 @@
 const http=require('node:http'),fs=require('node:fs'),path=require('node:path');
 const root=__dirname;
 http.createServer((req,res)=>{
+ if(req.url==='/dashboard-test'){
+  const html=fs.readFileSync(path.join(root,'index.html'),'utf8');
+  const fixture=`<script>state.month='2026-10';document.querySelector('#monthPicker').value=state.month;state.txs=Array.from({length:18},(_,i)=>({id:'demo-'+i,date:'2026-10-'+String(i<8?6:i+1).padStart(2,'0'),merchant:['씨유 해링턴점','지에스 더프레시 운정점','가상카페','가상놀이'][i%4],amount:[6000,23600,4800,1000][i%4],discount:i%4===1?600:0,category:['편의점','장보기','카페','취미'][i%4],issuer:'우리카드',cardLast4:'0322',card:'우리카드 0322'}));dashboard.date='2026-10-06';render();</script>`;
+  res.setHeader('Content-Type','text/html; charset=utf-8');return res.end(html.replace('</body>',fixture+'</body>'));
+ }
  if(req.url==='/filter-test'){
   const html=fs.readFileSync(path.join(root,'index.html'),'utf8');
   const fixture=`<script>
   state.txs=[];state.importMode='excel';state.reviewFilters.clear();
   state.pending=Array.from({length:90},(_,i)=>({id:'filter-'+i,date:'2026-10-01',merchant:i<34?'가상놀이A':i<36?'가상놀이B':i<60?'씨유(CU)테스트점':'지에스 더프레시 테스트점',amount:1000,discount:0,category:i<36?'미분류':'장보기',issuer:i<60?'우리카드':'현대카드',cardLast4:i<34?'0322':i<60?'9569':'1111',card:i<60?'우리카드 '+(i<34?'0322':'9569'):'현대카드 1111',sourceType:'excel',action:'new',status:'이용'}));
-  render();renderReview();document.querySelector('#reviewPanel').classList.remove('hidden');
+  render();renderReview();switchTab('import');document.querySelector('#reviewPanel').classList.remove('hidden');
   </script>`;
   res.setHeader('Content-Type','text/html; charset=utf-8');return res.end(html.replace('</body>',fixture+'</body>'));
  }
@@ -15,7 +20,7 @@ http.createServer((req,res)=>{
   const fixture=`<script>
   state.txs=[];
   state.pending=parseTransactionsFromOCR({data:{text:'우아한형제들 20,000원\\n본인 0322\\n할인 3,500원\\n플레이타임 1,000원\\n본인 9569\\n할인 150원\\n플레이타임 1,000원\\n본인 9569\\n할인 325원'}},{name:'test-fixture',lastModified:Date.now()},0).transactions;
-  render();renderReview();document.querySelector('#reviewPanel').classList.remove('hidden');
+  render();renderReview();switchTab('import');document.querySelector('#reviewPanel').classList.remove('hidden');
   </script>`;
   res.setHeader('Content-Type','text/html; charset=utf-8');return res.end(html.replace('</body>',fixture+'</body>'));
  }

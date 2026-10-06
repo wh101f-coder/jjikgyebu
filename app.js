@@ -1,5 +1,5 @@
 
-const APP_VERSION = '1.0.4';
+const APP_VERSION = '1.0.5';
 const CATEGORIES = ['미분류','취미','친구모임','코인노래방','인형뽑기','배달음식','전기차 충전','자동차·타이어','장보기','빵·간식','통신','구독','관리비','세금','보험','식비','카페','편의점','교통','쇼핑','생활','의료','교육','기타'];
 const merchantMappings = JSON.parse(localStorage.getItem('jjig_merchant_mappings')||'{}');
 const cardNames = JSON.parse(localStorage.getItem('jjig_card_names')||'{}');
@@ -406,42 +406,14 @@ function render(){
     $('#monthDelta').textContent=`지난달보다 ${pct}% ${diff>=0?'↑':'↓'}`;
   }else $('#monthDelta').textContent='지난달 비교 준비중';
 
-  const days=groupCurrentMonth();
-  const has=Object.keys(days).length>0;
-  $('#emptyState').style.display=has?'none':'flex';
-  $('#groupedList').innerHTML=Object.entries(days).map(([date,txs])=>{
-    const groups={};
-    txs.forEach(t=>{
-    const k=`${displayMerchant(t.merchant)}|${t.category}|${t.issuer||''}|${t.cardLast4||t.card||''}`;
-      groups[k]??=[]; groups[k].push(t);
-    });
-    const dayTotal=txs.reduce((s,t)=>s+t.amount,0);
-    return `<div class="day-block">
-      <div class="day-head"><span>${date.slice(5).replace('-','/')}</span><span>${fmt(dayTotal)}</span></div>
-      ${Object.values(groups).map(g=>{
-        const total=g.reduce((s,t)=>s+t.amount,0), first=g[0];
-        return `<div class="tx-row" data-ids="${g.map(x=>x.id).join(',')}">
-          <div>
-            <div class="tx-title">${escapeHtml(displayMerchant(first.merchant))}</div>
-            <div class="tx-sub">${escapeHtml(first.category)} · ${escapeHtml(cardLabel(first))}${first.cardLast4?' · '+first.cardLast4:''}</div>
-          </div>
-          <div>
-            <div class="tx-amount">${fmt(total)}</div><div class="discount-field">할인 ${fmt(g.reduce((sum,t)=>sum+(t.discount||0),0))}</div>
-            ${g.length>1?`<div class="tx-count">${g.length}건 묶음 ›</div>`:''}
-          </div>
-        </div>`;
-      }).join('')}
-    </div>`;
-  }).join('');
-
-  $$('.tx-row').forEach(row=>row.addEventListener('click',()=>openDetails(row.dataset.ids.split(','))));
+  if(typeof renderDashboard==='function')renderDashboard();
   renderCoach(cur,pre,ym);
   if(typeof renderBilling==='function')renderBilling();
 }
 
 function renderCoach(cur,pre,ym){
   const monthly=state.txs.filter(t=>t.date.startsWith(ym));
-  const cat={}; monthly.forEach(t=>cat[t.category]=(cat[t.category]||0)+t.amount);
+  const cat={}; monthly.forEach(t=>cat[t.category]=(cat[t.category]||0)+t.amount-(t.discount||0));
   const top=Object.entries(cat).sort((a,b)=>b[1]-a[1])[0];
   let msg='이용내역을 등록하면 소비 패턴을 비교해드릴게요.';
   if(monthly.length>=3 && top){
@@ -460,7 +432,7 @@ function renderCoach(cur,pre,ym){
 
 function openDetails(ids){
   const arr=ids.map(id=>state.txs.find(t=>t.id===id)).filter(Boolean);
-  if(!arr.length) return;
+  if(!arr.length){$('#detailsDialog').close();return;}
   const total=arr.reduce((s,t)=>s+t.amount,0);
   $('#detailsTitle').textContent=`${displayMerchant(arr[0].merchant)} · ${fmt(total)}`;
   $('#detailsList').innerHTML=arr.map(t=>`
@@ -486,7 +458,7 @@ function openEdit(id=null){
   state.editingId=id;
   const t=id?state.txs.find(x=>x.id===id):null;
   $('#dialogTitle').textContent=t?'지출 수정':'직접 등록';
-  $('#editDate').value=t?.date||today();
+  $('#editDate').value=t?.date||(typeof dashboard!=='undefined'?dashboard.date:today());
   $('#editMerchant').value=t?.merchant||'';
   $('#editAmount').value=t?.amount||'';
   $('#editDiscount').value=t?.discount||0;
@@ -527,15 +499,19 @@ $('#saveReviewedBtn').onclick=()=>{
   if(state.pending.some(t=>!validTransaction(t))){toast('결제금액과 할인금액을 확인해주세요');return;}
   const clean=state.pending.map(({selected,...t})=>t);
   state.txs.push(...clean);
+  const latest=clean.map(t=>t.date).sort().at(-1);
+  if(latest){state.month=latest.slice(0,7);$('#monthPicker').value=state.month;if(typeof dashboard!=='undefined')dashboard.date=latest;}
   save();
   state.pending=[]; state.files=[];
   $('#imageInput').value='';
   $('#importPanel').classList.add('hidden');
   $('#reviewPanel').classList.add('hidden');
+  if(typeof switchTab==='function')switchTab('calendar');
   toast(`${clean.length}건 등록 완료`);
 };
 $('#manualAddBtn').onclick=()=>openEdit();
 $('#saveEditBtn').onclick=()=>{
+  if(!$('#editForm').reportValidity())return;
   const original=state.txs.find(x=>x.id===state.editingId);
   const t={
     ...original,
@@ -558,14 +534,14 @@ $('#saveEditBtn').onclick=()=>{
   if(state.editingId){
     state.txs=state.txs.map(x=>x.id===state.editingId?t:x);
   }else state.txs.push(t);
+  state.month=t.date.slice(0,7);$('#monthPicker').value=state.month;
+  if(typeof dashboard!=='undefined')dashboard.date=t.date;
   $('#editDialog').close(); save(); toast('저장했어요');
 };
 $('#detailsClose').onclick=()=>$('#detailsDialog').close();
 
-$('#settingsBtn').onclick=()=>{
-  const ok=confirm('프로토타입 데이터 전체를 삭제할까요?\n\n취소를 누르면 아무것도 지워지지 않습니다.');
-  if(ok){ state.txs=[]; save(); toast('전체 삭제 완료'); }
-};
+$('#closeEditBtn').onclick=$('#cancelEditBtn').onclick=()=>$('#editDialog').close();
+$('#editForm').onsubmit=e=>e.preventDefault();
 
 $('#appVersion').textContent='v'+APP_VERSION;
 $('#monthPicker').value=state.month;

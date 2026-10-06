@@ -125,7 +125,8 @@ function commitExcel(){
   if(latest){state.month=latest.slice(0,7);$('#monthPicker').value=state.month;}
   state.pending=[];excelSession=null;
   $('#reviewPanel').classList.add('hidden');$('#excelPanel').classList.add('hidden');
-  render();toast(`${active.length}건 반영 완료`);
+  if(typeof dashboard!=='undefined'&&latest)dashboard.date=latest;
+  render();if(typeof switchTab==='function')switchTab('calendar');toast(`${active.length}건 반영 완료`);
 }
 function renderBilling(){
   const m=new Date(state.month+'-01T12:00:00');m.setMonth(m.getMonth()+1);
@@ -143,7 +144,4 @@ function renderBilling(){
   }
   $('#billingSummary').innerHTML=`<p><b>${target} 결제 예정</b></p>`+(groups.size?Array.from(groups).map(([key,g])=>`<div class="billing-row"><span>${escapeHtml(g.label)}<small>${g.count}건 · ${g.estimated?'예상':'지정한 청구월 기준'}</small></span><b>${fmt(g.total)}</b></div>`).join(''):'<p class="muted">이 기간의 엑셀 내역이 없습니다.</p>');
 }
-// Preserve the prior destructive-action confirmation while clearing import receipts too.
-const oldSettingsHandler=$('#settingsBtn').onclick;
-$('#settingsBtn').onclick=()=>{const had=state.txs.length;oldSettingsHandler();if(had&&!state.txs.length)localStorage.removeItem('jjig_excel_imports');};
 renderBilling();

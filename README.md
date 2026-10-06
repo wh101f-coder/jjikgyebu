@@ -85,3 +85,11 @@ Netlify Drop, Cloudflare Pages, Vercel 등 정적 사이트 호스팅에도 그�
 ## 개인정보
 현재 버전은 OCR을 브라우저 안에서 수행합니다. 지출 데이터는 외부 서버 DB에 저장하지 않습니다.
 다만 Tesseract 라이브러리/언어모델 파일을 CDN에서 다운로드합니다.
+
+## v1.0.5
+- 달력 기본 화면: 날짜별 할인 반영 지출 합계, 선택한 날의 작은 거래 목록과 개별 수정·삭제.
+- 통계 탭: 원/띠 그래프 전환, 업종 다중 선택, 선택 합계·비중·해당 거래 표시. 환불은 부호를 유지하며 음수 업종은 그래프 면적에서 제외.
+- 등록 및 카드 청구 내역은 별도 탭. 기존 localStorage와 가져오기 식별자는 유지.
+- 전체 초기화 버튼 제거. 직접 등록의 X/취소는 입력 검증 없이 닫고 저장할 때만 검증.
+- dashboard.js: 달력/통계/탭, index.html 및 styles.css: 모바일 UI, app.js 및 excel-ui.js: 화면 연결과 닫기 처리, sw.js: 새 화면 파일 캐시.
+- 검증: `node --test --test-isolation=none tests.cjs excel-tests.cjs dashboard-tests.cjs` (27개), 390px 모바일 UI에서 빈 폼 취소·날짜 선택·개별 삭제·다중 업종 선택·기존 90건 분류 필터 확인.
