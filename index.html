@@ -17,14 +17,14 @@
     <header class="topbar">
       <div>
         <div class="eyebrow">MY LEDGER</div>
-        <h1>찍계부 <span id="appVersion" class="app-version">v1.0.5</span></h1>
+        <h1>찍계부 <span id="appVersion" class="app-version">v1.0.6</span></h1>
       </div>
       <span class="brand-flower" aria-hidden="true">✿</span>
     </header>
 
     <main>
       <section class="hero card">
-        <label class="month-picker">조회 월 <input id="monthPicker" type="month" aria-label="조회 월" /></label>
+        <div class="month-picker"><span>조회 월</span><input id="monthPicker" type="hidden" /><button id="monthMenuToggle" type="button" aria-expanded="false" aria-controls="monthMenu">월 선택</button></div><div id="monthMenu" hidden><div class="year-navigation"><button id="previousYear" aria-label="이전 연도">‹</button><b id="monthMenuYear"></b><button id="nextYear" aria-label="다음 연도">›</button></div><div id="monthMenuGrid"></div></div>
         <div class="hero-head">
           <div>
             <div class="muted" id="monthLabel"></div>

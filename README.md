@@ -93,3 +93,9 @@ Netlify Drop, Cloudflare Pages, Vercel 등 정적 사이트 호스팅에도 그�
 - 전체 초기화 버튼 제거. 직접 등록의 X/취소는 입력 검증 없이 닫고 저장할 때만 검증.
 - dashboard.js: 달력/통계/탭, index.html 및 styles.css: 모바일 UI, app.js 및 excel-ui.js: 화면 연결과 닫기 처리, sw.js: 새 화면 파일 캐시.
 - 검증: `node --test --test-isolation=none tests.cjs excel-tests.cjs dashboard-tests.cjs` (27개), 390px 모바일 UI에서 빈 폼 취소·날짜 선택·개별 삭제·다중 업종 선택·기존 90건 분류 필터 확인.
+
+## v1.0.6
+- 조회 월: iOS 기본 month 선택기를 12개월 터치 버튼 메뉴와 연도 이동으로 교체.
+- 원/띠 그래프: 연결선·업종 이름·비율, 고정 업종 색상, 선택 합계 유지. 7개 이상이면 상위 5개 외 항목은 한 조각으로 묶고 전체 개별 업종은 아래 목록에 유지. 묶음을 누르면 해당 업종들을 함께 선택/해제.
+- touch-action: manipulation으로 의도치 않은 두 번 탭 확대를 방지. 모바일 입력은 16px로 입력 시 자동 확대를 방지. 스크롤과 접근성 확대 제스처는 유지.
+- 데스크톱 브라우저의 390px 화면에서 월/연도 이동, 그래프 라벨 및 묶음 다중 선택 확인. 실제 iPhone Safari 실기기 테스트는 별도 필요.

@@ -1,6 +1,11 @@
 const http=require('node:http'),fs=require('node:fs'),path=require('node:path');
 const root=__dirname;
 http.createServer((req,res)=>{
+ if(req.url==='/chart-test'){
+  const html=fs.readFileSync(path.join(root,'index.html'),'utf8');
+  const fixture=`<script>state.month='2026-10';state.txs=CATEGORIES.slice(1,20).map((category,i)=>({id:'chart-'+i,date:'2026-10-06',merchant:'가상업체 '+i,amount:Math.round(350000/Math.pow(i+1,1.5)),discount:0,category,card:'가상카드'}));dashboard.date='2026-10-06';render();switchTab('stats');</script>`;
+  res.setHeader('Content-Type','text/html; charset=utf-8');return res.end(html.replace('</body>',fixture+'</body>'));
+ }
  if(req.url==='/dashboard-test'){
   const html=fs.readFileSync(path.join(root,'index.html'),'utf8');
   const fixture=`<script>state.month='2026-10';document.querySelector('#monthPicker').value=state.month;state.txs=Array.from({length:18},(_,i)=>({id:'demo-'+i,date:'2026-10-'+String(i<8?6:i+1).padStart(2,'0'),merchant:['씨유 해링턴점','지에스 더프레시 운정점','가상카페','가상놀이'][i%4],amount:[6000,23600,4800,1000][i%4],discount:i%4===1?600:0,category:['편의점','장보기','카페','취미'][i%4],issuer:'우리카드',cardLast4:'0322',card:'우리카드 0322'}));dashboard.date='2026-10-06';render();</script>`;
