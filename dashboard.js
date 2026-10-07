@@ -22,40 +22,29 @@ function renderMonthMenu(){
   $$('[data-month]').forEach(b=>b.onclick=()=>{state.month=b.dataset.month;$('#monthPicker').value=state.month;$('#monthMenu').hidden=true;$('#monthMenuToggle').setAttribute('aria-expanded','false');render();});
 }
 function labeledChart(segments,control,mode){
-  const positive=segments.filter(s=>s.share>0);
-  const sides=[[],[]];
-  positive.forEach((s,index)=>{
-    const angle=(s.start+s.share/2)*Math.PI*2-Math.PI/2;
-    const side=mode==='donut'?(Math.cos(angle)>=0?1:0):(index<Math.ceil(positive.length/2)?0:1);
-    sides[side].push({...s,angle});
-  });
-  const height=Math.max(mode==='donut'?248:160,Math.max(...sides.map(s=>s.length))*24+(mode==='donut'?64:104));
-  const cy=mode==='donut'?height/2:40;
-  let shapes='';
-  if(mode==='donut'){
-    shapes=`<circle cx="180" cy="${cy}" r="70" fill="none" stroke="#f3eef8" stroke-width="22"/>`;
-    shapes+=positive.map(s=>{const gap=Math.min(.7,s.share*100*.15);return `<circle ${control(s)} role="button" tabindex="0" cx="180" cy="${cy}" r="70" pathLength="100" fill="none" stroke="${s.color}" stroke-width="${dashboard.selected.has(s.name)?26:22}" stroke-linecap="butt" stroke-dasharray="${Math.max(.01,s.share*100-gap)} ${100-s.share*100+gap}" stroke-dashoffset="${-s.start*100-gap/2}" transform="rotate(-90 180 ${cy})" opacity="${s.active?1:.22}"/>`;}).join('');
-  }else shapes=positive.map(s=>`<rect ${control(s)} role="button" tabindex="0" x="${14+s.start*332}" y="26" width="${Math.max(.6,s.share*332-2)}" height="26" rx="${Math.min(8,s.share*83)}" fill="${s.color}" opacity="${s.active?1:.22}"/>`).join('');
-  const labels=sides.map((side,right)=>{
-    side.sort((a,b)=>mode==='donut'?Math.sin(a.angle)-Math.sin(b.angle):a.start-b.start);
-    return side.map((s,i)=>{
-      const gap=Math.min(34,(height-40)/Math.max(1,side.length-1));
-      const y=mode==='donut'?(height-(side.length-1)*gap)/2+i*gap:88+i*24;
-      const x=right?354:6, end=right?272:88;
-      const sx=mode==='donut'?180+Math.cos(s.angle)*85:14+(s.start+s.share/2)*332;
-      const sy=mode==='donut'?cy+Math.sin(s.angle)*85:56;
-      const elbow=right?266:94;
-      return `<g ${control(s)} role="button" tabindex="0" opacity="${s.active?1:.35}"><path d="M ${sx} ${sy} L ${elbow} ${y} L ${end} ${y}" fill="none" stroke="${s.color}" stroke-width="1.2" opacity=".65"/><circle cx="${sx}" cy="${sy}" r="2" fill="${s.color}"/><text x="${x}" y="${y-4}" text-anchor="${right?'end':'start'}" class="chart-name">${escapeHtml(s.name)}</text><text x="${x}" y="${y+9}" text-anchor="${right?'end':'start'}" class="chart-percent" fill="${s.color}">${s.share<.01?'1% 미만':Math.round(s.share*100)+'%'}</text></g>`;
-    }).join('');
+  const positive=segments.filter(s=>s.share>0),width=Math.max(280,$('#expenseChart').clientWidth||340);
+  const labels=positive.map(s=>`${s.name} ${s.share<.01?'1% 미만':Math.round(s.share*100)+'%'}`);
+  const measure=document.createElement('canvas').getContext('2d');
+  measure.font='600 11.5px -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", "Malgun Gothic", sans-serif';
+  const layout=chartCallouts(positive,width,mode,labels.map(text=>measure.measureText(text).width));
+  const {rows,cx,cy,r,height}=layout;
+  const defs=`<defs><filter id="callout-outline" filterUnits="userSpaceOnUse" x="-5" y="-5" width="${width+10}" height="${height+10}" color-interpolation-filters="sRGB"><feMorphology in="SourceAlpha" operator="dilate" radius="1.2" result="expanded"/><feFlood flood-color="white" result="white"/><feComposite in="white" in2="expanded" operator="in" result="outline"/><feMerge><feMergeNode in="outline"/><feMergeNode in="SourceGraphic"/></feMerge></filter></defs>`;
+  let shapes=mode==='donut'?`<circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="#f3eef8" stroke-width="24"/>`:'';
+  shapes+=rows.map(({s})=>{
+    if(mode==='strip')return `<rect ${control(s)} role="button" tabindex="0" x="${12+s.start*(width-24)}" y="20" width="${Math.max(.6,s.share*(width-24)-2)}" height="24" rx="${Math.min(7,s.share*60)}" fill="${s.color}" opacity="${s.active?1:.22}"/>`;
+    const gap=Math.min(.7,s.share*15);
+    return `<circle ${control(s)} role="button" tabindex="0" cx="${cx}" cy="${cy}" r="${r}" pathLength="100" fill="none" stroke="${s.color}" stroke-width="24" stroke-dasharray="${Math.max(.01,s.share*100-gap)} ${100-s.share*100+gap}" stroke-dashoffset="${-s.start*100-gap/2}" transform="rotate(-90 ${cx} ${cy})" opacity="${s.active?1:.22}"/>`;
   }).join('');
+  const callouts=rows.map(p=>`<g opacity="${p.s.active?1:.35}"><g class="callout-line" filter="url(#callout-outline)"><path d="${p.path}" fill="none" stroke="${p.s.color}" stroke-width="1.5"/><circle cx="${p.sx}" cy="${p.sy}" r="2.6" fill="${p.s.color}"/></g><g ${control(p.s)} role="button" tabindex="0" class="callout-label"><rect x="${p.x-3}" y="${p.y-19}" width="${p.tw+6}" height="30" fill="transparent"/><text x="${p.x}" y="${p.y}" class="callout-text">${escapeHtml(p.s.name)} <tspan fill="${p.s.color}">${p.s.share<.01?'1% 미만':Math.round(p.s.share*100)+'%'}</tspan></text></g></g>`).join('');
   const share=positive.reduce((sum,s)=>sum+(s.members?s.members.filter(m=>m.active).reduce((n,m)=>n+m.share,0):s.active?s.share:0),0);
-  const center=mode==='donut'?`<text x="180" y="${cy-8}" text-anchor="middle" class="chart-center-label">${dashboard.selected.size?'선택한 비중':'지출 비중'}</text><text x="180" y="${cy+19}" text-anchor="middle" class="chart-center-value">${Math.round(share*100)}%</text>`:'';
-  return `<svg class="labeled-chart" viewBox="0 0 360 ${height}" aria-label="업종별 지출 ${mode==='donut'?'원':'띠'}그래프">${shapes}${labels}${center}</svg>`;
+  const center=mode==='donut'?`<text x="${cx}" y="${cy-8}" text-anchor="middle" class="chart-center-label">${dashboard.selected.size?'선택한 비중':'지출 비중'}</text><text x="${cx}" y="${cy+23}" text-anchor="middle" class="chart-center-value">${Math.round(share*100)}%</text>`:'';
+  return `<svg class="labeled-chart" viewBox="0 0 ${width} ${height}" aria-label="업종별 지출 ${mode==='donut'?'원':'띠'}그래프">${defs}${shapes}${callouts}${center}</svg>`;
 }
 function switchTab(tab){
   dashboard.tab=tab;
   $$('.tab-pane').forEach(p=>p.classList.toggle('hidden',p.id!==tab+'Pane'));
   $$('[data-tab]').forEach(b=>{if(b.dataset.tab===tab)b.setAttribute('aria-current','page');else b.removeAttribute('aria-current');});
+  if(tab==='stats')renderDashboard();
   window.scrollTo({top:0,behavior:'smooth'});
 }
 function compactRows(txs){
