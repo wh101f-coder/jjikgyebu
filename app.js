@@ -1,5 +1,5 @@
 
-const APP_VERSION = '1.0.8';
+const APP_VERSION = '1.1.0';
 const CATEGORIES = ['미분류','취미','친구모임','코인노래방','인형뽑기','배달음식','전기차 충전','자동차·타이어','장보기','빵·간식','통신','구독','관리비','세금','보험','식비','카페','편의점','교통','쇼핑','생활','의료','교육','기타'];
 const merchantMappings = JSON.parse(localStorage.getItem('jjig_merchant_mappings')||'{}');
 const cardNames = JSON.parse(localStorage.getItem('jjig_card_names')||'{}');
@@ -559,7 +559,4 @@ $('#applyBulkCategory').onclick=()=>{
   state.pending.filter(t=>t.category==='미분류').forEach(t=>t.category=categoryFor(t.merchant));
   renderReview();toast(selected.length+'건 분류 완료');
 };
-if('serviceWorker' in navigator){
-  window.addEventListener('load',()=>navigator.serviceWorker.register('./sw.js').catch(console.warn));
-}
 render();
