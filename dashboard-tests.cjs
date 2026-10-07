@@ -3,6 +3,23 @@ const ctx=vm.createContext({today:()=> '2026-10-06'});
 vm.runInContext(fs.readFileSync(__dirname+'/dashboard.js','utf8').split("$$('[data-tab]').forEach(b=>b.onclick")[0],ctx);
 const run=s=>vm.runInContext(s,ctx);
 const {chartCallouts}=require('./chart-callouts.js');
+test('strip leaders never cross each other or labels, including skewed shares',()=>{
+ let seed=8;const random=()=>((seed=(seed*1664525+1013904223)>>>0)/4294967296);
+ const samples=[[24,19,14,10,6,27],[46,16,9,6,4,19],...Array.from({length:600},(_,i)=>Array.from({length:i%6+1},()=>1+random()*100))];
+ for(const weights of samples)for(const width of [280,320,390]){
+  let start=0;const total=weights.reduce((a,b)=>a+b,0),items=weights.map(value=>{const s={start,share:value/total};start+=s.share;return s;});
+  const {rows}=chartCallouts(items,width,'strip',items.map((_,i)=>[72,60,84,60,60,98][i]));
+  const segments=rows.map(row=>{let x=0,y=0;return row.path.match(/[MHV][^MHV]+/g).flatMap(part=>{const a=part.slice(1).trim().split(/\s+/).map(Number);if(part[0]==='M'){[x,y]=a;return [];}const nx=part[0]==='H'?a[0]:x,ny=part[0]==='V'?a[0]:y;const s=[Math.min(x,nx),Math.min(y,ny),Math.max(x,nx),Math.max(y,ny)];x=nx;y=ny;return [s];});});
+  const intersects=(a,b)=>a[0]<=b[2]&&a[2]>=b[0]&&a[1]<=b[3]&&a[3]>=b[1];
+  rows.forEach((row,i)=>{
+   assert.ok(row.x>=0&&row.x+row.tw<=width);
+   for(const line of segments[i]){
+    rows.forEach(label=>assert.ok(!intersects(line,[label.x,label.y-12,label.x+label.tw,label.y+2]),'leader crosses text'));
+    for(let j=i+1;j<rows.length;j++)for(const other of segments[j])assert.ok(!intersects(line,other),`crossing ${i}/${j} at ${width}, shares ${weights}`);
+   }
+  });
+ }
+});
 test('callouts avoid labels at phone widths and retain original segment identity',()=>{
  let start=0;const items=[.24,.19,.14,.10,.06,.27].map((share,i)=>{const s={i,start,share,members:i===5?[{}]:undefined};start+=share;return s;});
  for(const width of [280,320,390])for(const mode of ['donut','strip']){

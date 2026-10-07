@@ -27,11 +27,11 @@ function labeledChart(segments,control,mode){
   const measure=document.createElement('canvas').getContext('2d');
   measure.font='600 11.5px -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", "Malgun Gothic", sans-serif';
   const layout=chartCallouts(positive,width,mode,labels.map(text=>measure.measureText(text).width));
-  const {rows,cx,cy,r,height}=layout;
+  const {rows,cx,cy,r,height,barY}=layout;
   const defs=`<defs><filter id="callout-outline" filterUnits="userSpaceOnUse" x="-5" y="-5" width="${width+10}" height="${height+10}" color-interpolation-filters="sRGB"><feMorphology in="SourceAlpha" operator="dilate" radius="1.2" result="expanded"/><feFlood flood-color="white" result="white"/><feComposite in="white" in2="expanded" operator="in" result="outline"/><feMerge><feMergeNode in="outline"/><feMergeNode in="SourceGraphic"/></feMerge></filter></defs>`;
   let shapes=mode==='donut'?`<circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="#f3eef8" stroke-width="24"/>`:'';
   shapes+=rows.map(({s})=>{
-    if(mode==='strip')return `<rect ${control(s)} role="button" tabindex="0" x="${12+s.start*(width-24)}" y="20" width="${Math.max(.6,s.share*(width-24)-2)}" height="24" rx="${Math.min(7,s.share*60)}" fill="${s.color}" opacity="${s.active?1:.22}"/>`;
+    if(mode==='strip')return `<rect ${control(s)} role="button" tabindex="0" x="${12+s.start*(width-24)}" y="${barY}" width="${Math.max(.6,s.share*(width-24)-2)}" height="24" rx="${Math.min(7,s.share*60)}" fill="${s.color}" opacity="${s.active?1:.22}"/>`;
     const gap=Math.min(.7,s.share*15);
     return `<circle ${control(s)} role="button" tabindex="0" cx="${cx}" cy="${cy}" r="${r}" pathLength="100" fill="none" stroke="${s.color}" stroke-width="24" stroke-dasharray="${Math.max(.01,s.share*100-gap)} ${100-s.share*100+gap}" stroke-dashoffset="${-s.start*100-gap/2}" transform="rotate(-90 ${cx} ${cy})" opacity="${s.active?1:.22}"/>`;
   }).join('');
