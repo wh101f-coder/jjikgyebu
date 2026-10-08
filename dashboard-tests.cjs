@@ -53,3 +53,19 @@ test('category totals subtract discounts and retain signed refunds',()=>{
  assert.equal(run('selectedTransactions(txs,new Set()).length'),4);
  assert.equal(ctx.txs.length,4);
 });
+test('month comparison includes both months, discounts, refunds and multi-selection',()=>{
+ ctx.rows=[{date:'2026-01-01',category:'식비',amount:10000,discount:1000},{date:'2026-02-01',category:'식비',amount:18000},{date:'2026-01-03',category:'취미',amount:3000},{date:'2026-02-03',category:'카페',amount:2000},{date:'2026-02-04',category:'환불',amount:-5000}];
+ assert.equal(run("comparisonData(rows,'2026-01','2026-02').rows.length"),4);
+ assert.equal(run("comparisonData(rows,'2026-01','2026-02').before"),12000);
+ assert.equal(run("comparisonData(rows,'2026-01','2026-02').after"),15000);
+ assert.equal(run("comparisonData(rows,'2026-01','2026-02',new Set(['식비','카페'])).after"),20000);
+ assert.equal(run("comparisonData(rows,'2026-01','2026-01').before===comparisonData(rows,'2026-01','2026-01').after"),true);
+ assert.equal(run("comparisonData(rows,'2025-12','2026-02').hasBefore"),false);
+ assert.equal(run("previousMonth('2026-01')"),'2025-12');
+ assert.equal(run('changeText(10000,15000)'),'↑ 50% 증가');
+ assert.equal(run('changeText(10000,0)'),'↓ 100% 감소');
+ assert.equal(run('changeText(0,15000)'),'새 지출');
+ assert.equal(run('changeText(-1000,15000)'),'환불 반영 · 금액 비교');
+ assert.equal(run('changeText(0,0)'),'변화 없음');
+ assert.equal(ctx.rows.length,5);
+});

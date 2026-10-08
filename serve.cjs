@@ -1,7 +1,13 @@
 const http=require('node:http'),fs=require('node:fs'),path=require('node:path');
 const root=__dirname;
 http.createServer((req,res)=>{
+ if(req.url==='/compare-test'){
+ const html=fs.readFileSync(path.join(root,'index.html'),'utf8');
+ const fixture=`<script>state.month='2026-10';state.txs=[['2026-09-01','식비',10000],['2026-10-01','식비',15000],['2026-09-02','취미',20000],['2026-10-02','취미',10000],['2026-10-03','카페',4000]].map(([date,category,amount],i)=>({id:'comparison-'+i,date,category,amount,discount:0,merchant:'가상업체',card:'가상카드'}));render();switchTab('compare');</script>`;
+ res.setHeader('Content-Type','text/html; charset=utf-8');return res.end(html.replace('</body>',fixture+'</body>'));
+ }
  if(req.url==='/chart-test'){
+
   const html=fs.readFileSync(path.join(root,'index.html'),'utf8');
   const fixture=`<script>state.month='2026-10';state.txs=CATEGORIES.slice(1,20).map((category,i)=>({id:'chart-'+i,date:'2026-10-06',merchant:'가상업체 '+i,amount:Math.round(350000/Math.pow(i+1,1.5)),discount:0,category,card:'가상카드'}));dashboard.date='2026-10-06';render();switchTab('stats');</script>`;
   res.setHeader('Content-Type','text/html; charset=utf-8');return res.end(html.replace('</body>',fixture+'</body>'));
