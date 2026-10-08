@@ -1,5 +1,26 @@
 const {test}=require('node:test'),assert=require('node:assert/strict'),B=require('./batch-core.js');
 const sheet=(rows,name='내역')=>({rows,name});
+test('semantic headers and cell profiles distinguish money, points, customer and currency',()=>{
+ const rows=[['조회기간','2026-01-01 ~ 2026-09-30'],['국내 사용 금액 (원)','이용 고객명','사용 카드 상품','가맹점 상호','거래 발생 날짜','적립 예상 포인트','해외 이용 금액 ($)','청구 할인 금액'],[2300,'가상고객','KB국민 테스트카드','가상카페','2026-09-30',500,0,100]];
+ const r=B.parseSheet(sheet(rows));assert.deepEqual(r.errors,[]);assert.equal(r.txs[0].amount,2300);assert.equal(r.txs[0].discount,100);assert.equal(r.txs[0].merchant,'가상카페');assert.equal(r.txs[0].cardLast4,'');assert.equal(r.txs[0].cardProduct,'KB국민 테스트카드');
+ const shuffled=rows.map((row,i)=>i===0?row:[4,3,1,6,7,0,2,5].map(n=>row[n]));assert.deepEqual(B.parseSheet(sheet(shuffled)).txs.map(t=>[t.date,t.merchant,t.amount,t.cardId]),r.txs.map(t=>[t.date,t.merchant,t.amount,t.cardId]));
+ rows[2][6]='-';assert.equal(B.parseSheet(sheet(rows)).errors.length,0);
+ rows[2][6]=20;assert.match(B.parseSheet(sheet(rows)).errors.join(),/외화/);
+});
+test('ambiguous amount columns and numeric merchant cells are not guessed',()=>{
+ assert.equal(B.parseSheet(sheet([['거래 날짜','가맹점 상호','원화 사용 금액','국내 거래 금액(원)'],['2026-01-01','가상',1000,2000]])).needsFormat,true);
+ assert.equal(B.parseSheet(sheet([['거래 날짜','가맹점 상호','사용 금액'],['2026-01-01',123456,1000]])).needsFormat,true);
+});
+test('void authorizations are excluded only when independently matching source totals',()=>{
+ const rows=[['정상/취소 (금액)','국내','5,000 / 1,000'],['이용일','이용카드명','이용하신곳','국내이용금액(원)','상태'],['2026-01-01','KB국민 가상카드','가상',5000,'전표매입'],['2026-01-02','KB국민 가상카드','가상',1000,'취소전표매입'],['2026-01-03','KB국민 가상카드','가상',2000,'승인취소']];
+ const r=B.parseSheet(sheet(rows));assert.deepEqual(r.errors,[]);assert.equal(r.voidRows,1);assert.equal(r.txs.reduce((n,t)=>n+t.amount,0),4000);
+ rows[0][2]='6,000 / 1,000';assert.match(B.parseSheet(sheet(rows)).errors.join(),/승인취소/);
+});
+test('named cards retain separate identities and numbered exports request overlap review',()=>{
+ const E=require('./excel-core.js'),t={issuer:'KB국민카드',cardLast4:'',cardProduct:'가상 A',date:'2026-01-01',merchant:'가상',amount:1000,discount:0,billedAmount:null,approvalNumber:'X'};
+ assert.equal(E.reconcile([t],[{...t,id:'old',cardProduct:'가상 B'}])[0].action,'new');
+ assert.equal(E.reconcile([t],[{...t,id:'old',cardLast4:'1234'}])[0].action,'review');
+});
 test('each file detects its own columns, issuer and date context',()=>{
  const a=B.parseSheet(sheet([['조회 2025.12.01 ~ 2026.01.31'],['이용일','이용가맹점(은행)명','이용금액(원)','이용카드','취소금액(원)'],['12.31 19:00:00','가상 A',1000,'0322',0],['이용일','이용가맹점(은행)명','이용금액(원)','이용카드','취소금액(원)'],['01.01 10:00:00','가상 B',2000,'0322',1000]]));
  assert.deepEqual(a.errors,[]);assert.deepEqual(a.txs.map(t=>t.date),['2025-12-31','2026-01-01','2026-01-01']);assert.equal(a.txs.reduce((s,t)=>s+t.amount,0),2000);assert.equal(a.txs[0].issuer,'우리카드');

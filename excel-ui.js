@@ -48,7 +48,7 @@ function renderBilling(){
     const d=new Date(t.date+'T12:00:00');d.setDate(1);d.setMonth(d.getMonth()+1);
     const assumed=`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-14`;
     const due=t.dueDate||assumed;if(!due.startsWith(target))continue;
-    const key=`${t.issuer} ${t.cardLast4}`,g=groups.get(key)||{total:0,count:0,estimated:false,label:cardLabel(t)+' · '+t.cardLast4};
+    const key=t.cardId||`${t.issuer} ${t.cardLast4}`,g=groups.get(key)||{total:0,count:0,estimated:false,label:cardLabel(t)+(t.cardLast4?' · '+t.cardLast4:'')};
     g.total+=(t.billedAmount??(t.amount-t.discount))+((t.billedIncludesFee&&t.billedAmount!==null)?0:(t.fee||0));g.count++;
     g.estimated ||= !t.dueConfirmed||t.billedAmount===null||t.discountKnown===false;
     groups.set(key,g);

@@ -19,7 +19,22 @@
    return E.date(v,year);
   };
   const resolveIssuer=(value,card,last4)=>issuer(value)||issuer(card)||fileIssuer||options.cardHints?.[last4]||'';
-  const result=E.parse(sheet.rows,{...found,year,issuer:fileIssuer,resolveDate,resolveIssuer,defaultCard,fileName:options.fileName,sheetName:sheet.name});
+  // Some statements list voided authorizations but omit them from monetary totals.
+  // Only exclude these when both source totals independently reconcile.
+  let sourceTotals;
+  for(const row of sheet.rows.slice(0,found.header)){
+   const label=row.findIndex(v=>/정상.*취소.*금액/.test(String(v).replace(/\s/g,'')));
+   if(label>=0){const pair=row.slice(label+1).map(v=>String(v).match(/^\s*([\d,]+)\s*\/\s*([\d,]+)\s*$/)).find(Boolean);if(pair)sourceTotals=pair.slice(1).map(E.money);}
+  }
+  const sums=[0,0];let hasVoid=false;
+  if(found.map.status>=0)for(const row of sheet.rows.slice(found.start)){
+   const value=E.money(row[found.map.amount]);if(value===null||!resolveDate(row[found.map.date]))continue;
+   const status=String(row[found.map.status]);if(/승인취소/.test(status)){hasVoid=true;continue;}
+   sums[/취소|환불/.test(status)||value<0?1:0]+=Math.abs(value);
+  }
+  const excludeApprovalVoids=hasVoid&&sourceTotals&&sourceTotals.every((n,i)=>n===sums[i]);
+  const result=E.parse(sheet.rows,{...found,year,issuer:fileIssuer,resolveDate,resolveIssuer,defaultCard,excludeApprovalVoids,fileName:options.fileName,sheetName:sheet.name});
+  if(hasVoid&&!excludeApprovalVoids)result.errors.push('승인취소 내역의 포함 여부를 파일 합계로 확인할 수 없습니다. 지출이 이중 차감되지 않도록 확인이 필요합니다.');
   result.warnings=result.warnings.filter(w=>!w.startsWith('연도가 없는'));
   return {...result,found};
  }

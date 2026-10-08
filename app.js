@@ -1,5 +1,5 @@
 
-const APP_VERSION = '1.1.1';
+const APP_VERSION = '1.1.2';
 const CATEGORIES = ['미분류','취미','친구모임','코인노래방','인형뽑기','배달음식','전기차 충전','자동차·타이어','장보기','빵·간식','통신','구독','관리비','세금','보험','식비','카페','편의점','교통','쇼핑','생활','의료','교육','기타'];
 const merchantMappings = JSON.parse(localStorage.getItem('jjig_merchant_mappings')||'{}');
 const cardNames = JSON.parse(localStorage.getItem('jjig_card_names')||'{}');
@@ -100,7 +100,7 @@ function displayMerchant(name=''){
   return brands.find(([pattern])=>pattern.test(key))?.[1]||name;
 }
 function cardLabel(t){
-  const key=t.issuer?`${t.issuer}:${t.cardLast4}`:t.cardLast4;
+  const key=t.cardId||(t.issuer?`${t.issuer}:${t.cardLast4}`:t.cardLast4);
   const generic=value=>!value||value===`카드 ${t.cardLast4}`||value===`${t.issuer} ${t.cardLast4}`;
   if(cardNames[key]&&!generic(cardNames[key]))return cardNames[key];
   if(t.card&&!generic(t.card))return t.card;
@@ -330,7 +330,7 @@ function renderReview(removed=state.overlapRemoved){
         <input class="rv-merchant" aria-label="업체명" value="${escapeHtml(displayMerchant(t.merchant))}" />
         <div class="review-meta">
           <span class="chip">${t.date}</span>
-          <span class="chip">${t.cardLast4 ? '끝 '+t.cardLast4 : '카드 확인 필요'}</span>
+          <span class="chip">${t.cardLast4 ? '끝 '+t.cardLast4 : t.cardProduct?'카드상품명으로 구분':'카드 확인 필요'}</span>
           <input class="rv-card" aria-label="카드 이름" placeholder="카드 이름 입력" value="${escapeHtml(cardLabel(t))}" style="max-width:150px" />
           <span class="chip">${t.sourceType==='excel'?'엑셀 · '+escapeHtml(t.issuer):'OCR '+t.confidence+'%'}</span>
         </div>
@@ -367,7 +367,7 @@ function collectReview(){
     const cardInput=el.querySelector('.rv-card');
     if(cardInput.value!==cardInput.defaultValue){
       t.card=cardInput.value.trim();
-      if(t.cardLast4&&t.card)cardNames[t.issuer ? t.issuer+':'+t.cardLast4 : t.cardLast4]=t.card;
+      if((t.cardLast4||t.cardId)&&t.card)cardNames[t.cardId||(t.issuer ? t.issuer+':'+t.cardLast4 : t.cardLast4)]=t.card;
     }
   }
   localStorage.setItem('jjig_card_names',JSON.stringify(cardNames));
