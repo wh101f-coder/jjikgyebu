@@ -46,7 +46,7 @@ function rebuildBatch(){
   if(!result.txs.length){messages.push(u.fileName+' · '+u.name+' 거래 없음');return;}
   keys.push(key);groups.push(result.txs.map(t=>({...t,id:crypto.randomUUID(),importFileKey:key,category:categoryFor(t.merchant)})));
  });
- state.pending=BatchImport.reconcileSheets(groups,state.txs).map(t=>({...t,category:t.category||categoryFor(t.merchant),card:cardNames[t.cardId]||t.card}));
+ state.pending=BatchImport.reconcileSheets(groups,state.txs).map(t=>({...t,category:t.category&&t.category!=='미분류'?t.category:categoryFor(t.merchant),card:cardNames[t.cardId]||t.card}));
  excelSession.keys=keys;excelSession.ready=issues.length===0;
  const notices=[...new Set(excelSession.units.filter(u=>!u.excluded).flatMap(u=>u.result?.warnings||[]))];
  $('#excelStatus').textContent=`${excelSession.units.length}개 시트 확인 · ${state.pending.length}건 읽음 · 확인 필요 ${issues.length}개\n`+[...messages,...notices].join('\n');

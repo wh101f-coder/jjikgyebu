@@ -76,3 +76,16 @@ test('hobby and social categories, shared brand manual classification',()=>{
  run("rememberCategory('씨유(CU)첫번째점','친구모임')");
  assert.equal(run("categoryFor('씨유(CU)두번째점')"),'친구모임');
 });
+test('issuer merchant suffixes classify while ambiguous payment platforms stay unknown',()=>{
+ const c=vm.createContext({localStorage:{getItem:()=>null,setItem(){}},crypto:require('node:crypto').webcrypto,Intl,Date});vm.runInContext(code,c);
+ for(const [name,category] of [['컴포즈커피_1','카페'],['(주) 메가 MGC 커피 테스트점','카페'],['씨유(CU) 테스트점_2','편의점'],['후불하이패스1건','교통'],['테스트약국_3','의료'],['테스트국밥집','식비'],['다이소 테스트점','생활'],['카페24','미분류'],['네이버페이','미분류'],['플레이타임','미분류'],['알수없는법인','미분류']]){
+  c.name=name;assert.equal(vm.runInContext('categoryFor(name)',c),category,name);
+ }
+ vm.runInContext("rememberCategory('컴포즈커피 첫지점','친구모임')",c);assert.equal(vm.runInContext("categoryFor('컴포즈커피_1')",c),'친구모임');
+});
+test('saved unknown categories are repaired without changing manual categories or transaction identity',()=>{
+ const data=new Map();const c=vm.createContext({localStorage:{getItem:k=>data.get(k),setItem:(k,v)=>data.set(k,v)},crypto:require('node:crypto').webcrypto,Intl,Date});vm.runInContext(code,c);
+ vm.runInContext("state.txs=[{id:'a',merchant:'컴포즈커피_1',amount:2300,category:'미분류',importIdentity:'original'},{id:'b',merchant:'컴포즈커피_2',amount:4000,category:'친구모임'},{id:'c',merchant:'모르는상호',amount:5000,category:'미분류'}]",c);
+ assert.equal(vm.runInContext('reclassifyUnclassified()',c),1);
+ const saved=JSON.parse(data.get('jjig_txs'));assert.deepEqual(saved.map(t=>t.category),['카페','친구모임','미분류']);assert.equal(saved[0].merchant,'컴포즈커피_1');assert.equal(saved[0].importIdentity,'original');assert.equal(saved[0].amount,2300);assert.equal(vm.runInContext('reclassifyUnclassified()',c),0);
+});

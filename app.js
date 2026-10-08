@@ -1,13 +1,16 @@
 
-const APP_VERSION = '1.1.2';
+const APP_VERSION = '1.1.3';
 const CATEGORIES = ['미분류','취미','친구모임','코인노래방','인형뽑기','배달음식','전기차 충전','자동차·타이어','장보기','빵·간식','통신','구독','관리비','세금','보험','식비','카페','편의점','교통','쇼핑','생활','의료','교육','기타'];
 const merchantMappings = JSON.parse(localStorage.getItem('jjig_merchant_mappings')||'{}');
 const cardNames = JSON.parse(localStorage.getItem('jjig_card_names')||'{}');
 const merchantKey = name => normalizeMerchant(name).replace(/\s/g,'').toLowerCase();
+// Issuers append branch codes and punctuation differently. Keep source text intact.
+const classificationKey=name=>merchantKey(name).replace(/[_#]\d+$/,'').replace(/[()（）._·\-]/g,'');
 function rememberCategory(name, category){
   if(category==='미분류' || !name || name==='업체명 확인 필요') return;
   merchantMappings[merchantKey(name)]=category;
   merchantMappings[merchantKey(displayMerchant(name))]=category;
+  merchantMappings[classificationKey(name)]=category;
   localStorage.setItem('jjig_merchant_mappings',JSON.stringify(merchantMappings));
 }
 const $ = (s)=>document.querySelector(s);
@@ -46,9 +49,12 @@ function toast(msg){
 
 function categoryFor(name=''){
   const key=merchantKey(name);
-  if(Object.hasOwn(merchantMappings,key)) return merchantMappings[key];
+  if(merchantMappings[key]&&merchantMappings[key]!=='미분류') return merchantMappings[key];
   const brandKey=merchantKey(displayMerchant(name));
-  if(Object.hasOwn(merchantMappings,brandKey))return merchantMappings[brandKey];
+  if(merchantMappings[brandKey]&&merchantMappings[brandKey]!=='미분류')return merchantMappings[brandKey];
+  const normalized=classificationKey(name);
+  const remembered=Object.entries(merchantMappings).find(([k,v])=>v&&v!=='미분류'&&classificationKey(k)===normalized);
+  if(remembered)return remembered[1];
   const rules=[
     ['코인노래방',/코인노래|코인뮤직|^코노(?:$|[^a-z])/],
     ['인형뽑기',/인형뽑기/],
@@ -68,12 +74,31 @@ function categoryFor(name=''){
     ['카페',/커피빈코리아/],
     ['배달음식',/^(우아한형제들|배달의민족|배민|쿠팡이츠|요기요)$/],
     ['전기차 충전',/^(지에스차지비|차지비|gs차지비)$/],
-    ['카페',/^(스타벅스|투썸플레이스|메가커피|컴포즈커피|빽다방|이디야)/],
+    ['카페',/^(스타벅스|투썸플레이스|메가(?:mgc)?커피|컴포즈커피|빽다방|이디야|할리스|탐앤탐스|폴바셋|더벤티|매머드커피|매머드익스프레스|커피빈|엔제리너스|파스쿠찌|커피에반하다|공차|카페베네)/],
     ['편의점',/^(gs25|씨유|cu(?=$|[^a-z])|세븐일레븐|이마트24)/],
-    ['취미',/^(cgv|롯데시네마|메가박스)/]
+    ['취미',/^(cgv|롯데시네마|메가박스)/],
+    ['카페',/커피전문점|커피숍|^카페(?!24)(?:$|[^a-z])|coffeeshop/],
+    ['식비',/치킨|피자|김밥|국밥|분식|삼겹살|족발|보쌈|돈까스|돈가스|햄버거|버거킹|맥도날드|맘스터치|서브웨이|써브웨이|롯데리아|본죽|샤브샤브|칼국수|해장국|순대국|중화요리/],
+    ['빵·간식',/뚜레쥬르|파리크라상|던킨|배스킨라빈스|베스킨라빈스|베이커리|제과점|도넛/],
+    ['장보기',/^(이마트(?!24)|홈플러스|롯데마트|코스트코|농협하나로|하나로마트|노브랜드)|슈퍼마켓|식자재마트/],
+    ['교통',/하이패스|철도|코레일|고속버스|시외버스|지하철|주차장|택시/],
+    ['의료',/약국|병원|의원|치과/],
+    ['생활',/^다이소|세탁소|크린토피아/],
+    ['쇼핑',/^무신사|^올리브영|^에이치앤엠|^유니클로/],
+    ['전기차 충전',/에버온|환경부충전|sk일렉링크|한국전기차충전|채비충전/]
   ];
-  for(const [cat, pattern] of rules) if(pattern.test(key)) return cat;
+  for(const [cat, pattern] of rules) if(pattern.test(key)||pattern.test(normalized)) return cat;
   return '미분류';
+}
+function reclassifyUnclassified(){
+  let count=0;
+  const next=state.txs.map(t=>{
+    if(t.category&&t.category!=='미분류')return t;
+    const category=categoryFor(t.merchant);if(category==='미분류')return t;
+    count++;return {...t,category};
+  });
+  if(count){try{localStorage.setItem('jjig_txs',JSON.stringify(next));state.txs=next;}catch(error){return 0;}}
+  return count;
 }
 
 function normalizeMerchant(s=''){
@@ -94,6 +119,8 @@ function displayMerchant(name=''){
     [/^(gs25|지에스25)/,'GS25편의점'],
     [/^세븐일레븐/,'세븐일레븐'],[/^이마트24/,'이마트24'],
     [/^스타벅스/,'스타벅스'],[/^커피빈(?:코리아)?/,'커피빈'],
+    [/^컴포즈\s*커피/,'컴포즈커피'],[/^메가(?:mgc)?\s*커피/,'메가커피'],
+    [/^투썸플레이스/,'투썸플레이스'],[/^빽다방/,'빽다방'],
     [/^이디야/,'이디야커피'],[/^파리바게뜨/,'파리바게뜨'],
     [/^우아한형제들/,'배달의민족']
   ];
@@ -562,4 +589,6 @@ $('#applyBulkCategory').onclick=()=>{
   state.pending.filter(t=>t.category==='미분류').forEach(t=>t.category=categoryFor(t.merchant));
   renderReview();toast(selected.length+'건 분류 완료');
 };
+const reclassifiedCount=reclassifyUnclassified();
 render();
+if(reclassifiedCount)toast(`미분류 ${reclassifiedCount}건을 자동 분류했어요`);

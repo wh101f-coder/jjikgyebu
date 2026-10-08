@@ -67,3 +67,8 @@ test('bill total with fee does not fail principal reconciliation',()=>{
  const r=parse([['이용일자','가맹점명','이용금액','카드번호','할인금액','청구금액','수수료'],['09.01','가게',1000,'0322',100,950,50]],{billedIncludesFee:true});
  assert.equal(r.errors.length,0);assert.equal(r.txs[0].billedIncludesFee,true);assert.equal(r.txs[0].billedAmount,950);
 });
+test('reconciliation keeps manual categories but does not overwrite new classification with unknown',()=>{
+ const t={...parse().txs[0],category:'카페',approvalNumber:'category-test'};
+ assert.equal(E.reconcile([t],[{...t,id:'existing',category:'미분류'}])[0].category,'카페');
+ assert.equal(E.reconcile([t],[{...t,id:'existing',category:'친구모임'}])[0].category,'친구모임');
+});

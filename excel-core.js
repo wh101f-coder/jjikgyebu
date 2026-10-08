@@ -162,7 +162,7 @@
       // An interim usage export must not erase an already confirmed benefit.
       if(t.discountKnown===false&&old.discountKnown!==false){t={...t,discount:old.discount||0,discountKnown:true};}
       const unchanged=old.amount===t.amount&&old.discount===t.discount&&old.billedAmount===t.billedAmount;
-      return {...t,matchId:old.id,previousDiscount:old.discount||0,action:strong&&unchanged?'skip':'review',matchReason:strong?'승인번호 일치':'같은 날짜·카드·업체·금액',category:old.category};
+      return {...t,matchId:old.id,previousDiscount:old.discount||0,action:strong&&unchanged?'skip':'review',matchReason:strong?'승인번호 일치':'같은 날짜·카드·업체·금액',category:old.category&&old.category!=='미분류'?old.category:t.category};
     });
   }
   const api={aliases,columns,detect,money,date,suffix,parse,reconcile,identity};
