@@ -89,7 +89,7 @@ function renderStats(txs){
   $('#selectionSummary').textContent=positive?`${selected.length}건 · ${Math.round(selectedShare*100)}% · 할인 반영${categories.some(([,v])=>v<0)?' · 환불이 더 큰 업종은 그래프에서 제외하고 금액에 반영':''}`:'표시할 양수 지출이 없어요 · 환불은 합계에 반영됩니다';
   $('#clearStats').hidden=!dashboard.selected.size;
   $('#categoryLegend').innerHTML=segments.map(s=>`<button class="category-row" ${control(s)}><span class="color-dot" style="background:${s.color}"></span><b>${escapeHtml(s.name)}</b><small>${Math.round(s.share*100)}%</small><strong>${fmt(s.value)}</strong></button>`).join('')||'<p class="muted">내역을 등록하면 통계가 보여요</p>';
-  $('#statsList').innerHTML=compactRows(selected.slice().sort((a,b)=>b.date.localeCompare(a.date)))||'<p class="muted">해당 내역이 없어요</p>';
+  if(typeof renderSavedList==='function')renderSavedList(selected);else $('#statsList').innerHTML=compactRows(selected.slice().sort((a,b)=>b.date.localeCompare(a.date)))||'<p class="muted">해당 내역이 없어요</p>';
   $$('[data-category]').forEach(el=>{
     const toggle=()=>{const names=el.dataset.category.split(',').map(i=>categories[Number(i)][0]);const remove=names.every(name=>dashboard.selected.has(name));names.forEach(name=>{if(remove)dashboard.selected.delete(name);else dashboard.selected.add(name);});renderDashboard();};
     el.onclick=toggle;

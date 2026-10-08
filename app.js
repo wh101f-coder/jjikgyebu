@@ -1,5 +1,5 @@
 
-const APP_VERSION = '1.1.0';
+const APP_VERSION = '1.1.1';
 const CATEGORIES = ['미분류','취미','친구모임','코인노래방','인형뽑기','배달음식','전기차 충전','자동차·타이어','장보기','빵·간식','통신','구독','관리비','세금','보험','식비','카페','편의점','교통','쇼핑','생활','의료','교육','기타'];
 const merchantMappings = JSON.parse(localStorage.getItem('jjig_merchant_mappings')||'{}');
 const cardNames = JSON.parse(localStorage.getItem('jjig_card_names')||'{}');
@@ -316,12 +316,15 @@ function renderReview(removed=state.overlapRemoved){
     <div class="stat"><strong>${removed}</strong><span>겹침 제외</span></div>
     <div class="stat"><strong>${fmt(total)}</strong><span>합계</span></div>
   `;
-  const visible=visibleReviewEntries();
-  $('#reviewFilterStatus').textContent=`전체 ${state.pending.length}건 중 ${visible.length}건 표시 · ${state.pending.filter(t=>t.selected).length}건 선택`;
+  const candidates=visibleReviewEntries();
+  const page=typeof reviewPageEntries==='function'?reviewPageEntries(candidates):{entries:candidates,total:candidates.length};
+  const visible=page.entries;
+  if(typeof renderReviewTools==='function')renderReviewTools();
+  $('#reviewFilterStatus').textContent=`전체 ${state.pending.length}건 · 조건에 맞는 ${page.total}건 중 ${visible.length}건 표시 · ${state.pending.filter(t=>t.selected).length}건 선택`;
   $('#clearReviewFilters').hidden=!state.reviewFilters.size;
   $('#saveReviewedBtn').textContent=state.importMode==='excel'?`전체 ${state.pending.length}건 등록 처리`:`전체 ${state.pending.length}건 등록`;
   $('#reviewList').innerHTML=visible.map(({t,i})=>`
-    <div class="review-item" data-i="${i}">
+    <details class="review-item" data-i="${i}"><summary><span><b>${escapeHtml(displayMerchant(t.merchant))}</b><small>${t.date} · ${escapeHtml(t.category)} · ${escapeHtml(cardLabel(t))}</small></span><strong>${fmt(t.amount-t.discount)}</strong></summary>
       <label class="review-select"><input type="checkbox" class="rv-selected" ${t.selected?'checked':''} aria-label="${escapeHtml(t.merchant)} 선택" /> 선택</label>
       <div>
         <input class="rv-merchant" aria-label="업체명" value="${escapeHtml(displayMerchant(t.merchant))}" />
@@ -340,7 +343,7 @@ function renderReview(removed=state.overlapRemoved){
           ${CATEGORIES.map(c=>`<option ${c===t.category?'selected':''}>${c}</option>`).join('')}
         </select>
       </div>
-    </div>
+    </details>
   `).join('');
   if(typeof renderExcelReviewExtras==='function')renderExcelReviewExtras();
 }

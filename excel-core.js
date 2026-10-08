@@ -1,19 +1,20 @@
 /* Pure spreadsheet normalization and conservative, occurrence-aware reconciliation. */
 (function(root){
   const compact=v=>String(v??'').replace(/\s/g,'');
+  const headerKey=v=>compact(v).replace(/[()（）\[\]·_]/g,'').replace(/원$/,'').toLowerCase();
   const aliases={
-    date:['이용일자','이용일','승인일자','승인일','거래일자','거래일','매출일자'],
-    merchant:['이용가맹점(은행)명','이용가맹점명','가맹점명','이용하신곳','이용하신가맹점','사용처','가맹점'],
+    date:['이용일자','이용일','승인일자','승인일','거래일자','거래일','매출일자','이용일시','승인일시','거래일시','사용일자','사용일','date'],
+    merchant:['이용가맹점(은행)명','이용가맹점명','가맹점명','이용하신곳','이용하신가맹점','사용처','가맹점','업체명','상호명','merchant'],
     amount:['이용금액(해외현지/체크카드)','이용금액','승인금액','사용금액','거래금액','이용금액(원)','승인금액(원)'],
     card:['이용카드','카드번호','카드번호(끝4자리)','카드끝자리'],
     discount:['혜택금액','할인금액','청구할인금액','할인액'],
     billed:['원금','결제원금','청구원금','청구금액','결제금액'],
     approval:['승인번호'],status:['매출구분','거래구분','이용구분','승인상태','상태'],
-    installments:['할부개월','할부기간'],fee:['수수료'],due:['결제일','결제예정일']
+    installments:['할부개월','할부기간'],fee:['수수료'],due:['결제일','결제예정일'],issuer:['카드사','카드사명','발급사'],cancel:['취소금액','누적취소금액']
   };
   function columns(row){
-    const headers=row.map(compact),map={};
-    for(const [field,names] of Object.entries(aliases)) map[field]=headers.findIndex(h=>names.includes(h));
+    const headers=row.map(headerKey),map={};
+    for(const [field,names] of Object.entries(aliases)) map[field]=headers.findIndex(h=>names.map(headerKey).includes(h));
     return map;
   }
   function detect(rows){
@@ -43,7 +44,7 @@
     const s=String(value??'').trim();
     let m=s.match(/^(20\d{2})[.\-/년]\s*(\d{1,2})[.\-/월]\s*(\d{1,2})(?:일)?(?:\s.*)?$/);
     if(!m&&/^20\d{6}$/.test(s))m=[s,s.slice(0,4),s.slice(4,6),s.slice(6,8)];
-    if(!m){const p=s.match(/^(\d{1,2})[.\-/월]\s*(\d{1,2})(?:일)?$/);if(p)m=[s,year,p[1],p[2]];}
+    if(!m){const p=s.match(/^(\d{1,2})[.\-/월]\s*(\d{1,2})(?:일)?(?:\s.*)?$/);if(p)m=[s,year,p[1],p[2]];}
     if(!m)return null;
     const [y,mo,d]=m.slice(1).map(Number),check=new Date(Date.UTC(y,mo-1,d));
     if(y<2000||y>2100||check.getUTCFullYear()!==y||check.getUTCMonth()!==mo-1||check.getUTCDate()!==d)return null;
@@ -62,12 +63,13 @@
     const read=(r,k)=>map[k]>=0?r[map[k]]:'';
     for(let i=start;i<rows.length;i++){
       const r=rows[i]; if(!r.some(v=>String(v??'').trim()))continue;
+      const repeated=columns(r);if(repeated.date>=0&&repeated.merchant>=0&&repeated.amount>=0)continue;
       const status=String(read(r,'status')),merchant=String(read(r,'merchant')).trim();
       if(/소계|합계|총계/.test(status)||/^(소계|합계|총계|청구합계)/.test(merchant)){summaryRows++;continue;}
       const rawDate=read(r,'date');
       // Footnotes and empty headings are not transactions, but transaction-like invalid rows are surfaced.
       if(!String(rawDate??'').trim()&&!merchant)continue;
-      const day=date(rawDate,year),amountValue=money(read(r,'amount'));
+      const day=options.resolveDate?options.resolveDate(rawDate):date(rawDate,year),amountValue=money(read(r,'amount'));
       if(!day||!merchant||amountValue===null){errors.push(`${i+1}행: 날짜·업체명·이용금액 확인 필요`);continue;}
       if(/^\d{1,2}[.\-/월]/.test(String(rawDate).trim()))yearless=true;
       const cardLast4=suffix(read(r,'card'))||suffix(defaultCard);
@@ -84,11 +86,19 @@
       if(discountKnown&&billedAmount!==null&&installments<=1&&amount-discount+(billedIncludesFee?fee:0)!==billedAmount)errors.push(`${i+1}행: 이용금액·혜택금액과 청구금액이 다릅니다. 열 선택을 확인해주세요`);
       let dueDate= date(read(r,'due'),year);
       if(!dueDate&&billingMonth)dueDate=billingMonth+'-14';
-      const t={date:day,merchant,amount,discount,discountKnown,billedAmount,billedIncludesFee,fee,installments,issuer,cardLast4,
-        cardId:issuer+':'+cardLast4,card:issuer+' '+cardLast4,approvalNumber:String(read(r,'approval')??'').trim(),
+      const rowIssuer=options.resolveIssuer?options.resolveIssuer(read(r,'issuer'),read(r,'card'),cardLast4):issuer;
+      if(!rowIssuer){errors.push(`${i+1}행: 카드사를 확인해주세요`);continue;}
+      const t={date:day,merchant,amount,discount,discountKnown,billedAmount,billedIncludesFee,fee,installments,issuer:rowIssuer,cardLast4,
+        cardId:rowIssuer+':'+cardLast4,card:rowIssuer+' '+cardLast4,approvalNumber:String(read(r,'approval')??'').trim(),
         status:cancelled?'취소':'이용',sourceType:'excel',sourceName:fileName,sourceSheet:sheetName,sourceRow:i+1,
         dueDate,dueConfirmed:!!dueDate};
       t.importIdentity=identity(t);txs.push(t);
+      const cancelAmount=money(read(r,'cancel'))||0;
+      if(!cancelled&&cancelAmount){
+        if(cancelAmount<0||cancelAmount>amount){errors.push(`${i+1}행: 취소금액 확인 필요`);continue;}
+        const refund={...t,amount:-cancelAmount,discount:0,discountKnown:false,billedAmount:null,status:'취소',cancelOfSourceRow:i+1};
+        delete refund.importIdentity;refund.importIdentity=identity(refund);txs.push(refund);
+      }
     }
     if(yearless)warnings.push(`연도가 없는 날짜는 ${year}년으로 적용했습니다. 연말·연초가 섞이면 연도별 파일로 나눠주세요.`);
     if(txs.some(t=>!t.discountKnown))warnings.push('할인 정보가 없는 거래는 할인 미확인으로 표시합니다. 최종지출은 잠정 합계입니다.');

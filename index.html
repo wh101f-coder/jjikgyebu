@@ -9,7 +9,7 @@
   <meta name="apple-mobile-web-app-title" content="찍계부" />
   <link rel="apple-touch-icon" href="./icons/icon-180.png" />
   <link rel="manifest" href="./manifest.webmanifest" />
-  <link rel="stylesheet" href="./styles.css?v=1.1.0" />
+  <link rel="stylesheet" href="./styles.css?v=1.1.1" />
   <title>찍계부</title>
 </head>
 <body>
@@ -17,7 +17,7 @@
     <header class="topbar">
       <div>
         <div class="eyebrow">MY LEDGER</div>
-        <h1>찍계부 <button type="button" id="appVersion" class="app-version">v1.1.0</button></h1>
+        <h1>찍계부 <button type="button" id="appVersion" class="app-version">v1.1.1</button></h1>
       </div>
       <span class="brand-flower" aria-hidden="true">✿</span>
     </header>
@@ -37,9 +37,9 @@
 <div id="calendarPane" class="tab-pane"><section class="card calendar-card"><div class="section-title-row"><h2>이달의 기록</h2><span class="muted">할인 반영 · 원</span></div><div class="weekdays"><span>일</span><span>월</span><span>화</span><span>수</span><span>목</span><span>금</span><span>토</span></div><div id="calendarGrid" class="calendar-grid"></div></section><section class="card day-card"><div class="section-title-row"><h2 id="dayTitle">날짜를 선택하세요</h2><button class="text-btn" id="manualAddBtn">+ 직접 등록</button></div><div id="daySummary" class="muted"></div><div id="groupedList"></div><div id="emptyState" class="empty">이날 등록된 지출이 없어요</div></section></div>
 <div id="statsPane" class="tab-pane hidden"><section class="card"><div class="section-title-row"><h2>어디에 썼을까?</h2><div class="chart-toggle"><button id="donutMode" aria-pressed="true">원</button><button id="stripMode" aria-pressed="false">띠</button></div></div><div id="expenseChart"></div><div id="selectionSummary" role="status"></div><button id="clearStats" class="text-btn" hidden>선택 해제</button></section><section class="card"><p class="muted">업종을 여러 개 눌러 함께 볼 수 있어요</p><div id="categoryLegend"></div></section><section class="card"><h2>선택한 지출</h2><div id="statsList" class="compact-list"></div></section><div id="coachCard" class="coach card"></div></div>
 <div id="importPane" class="tab-pane hidden"><section class="card"><h2>내역 가져오기</h2>        <div class="hero-actions">
-          <label class="primary-action">
-            <input id="excelInput" aria-label="카드 엑셀 파일" type="file" accept=".xls,.xlsx" />
-            <span class="camera">▦</span><span><strong>카드 엑셀 등록</strong><small>일주일·이주일·월별 내역 모두 가능</small></span>
+          <label id="excelDrop" class="primary-action">
+            <input id="excelInput" aria-label="카드 엑셀 파일" type="file" accept=".xls,.xlsx" multiple />
+            <span class="camera">▦</span><span><strong>카드 엑셀 등록</strong><small>여러 파일 선택 · 여기에 끌어놓기</small></span>
           </label>
         </div>
         <details class="photo-alternative"><summary>사진으로 등록</summary>
@@ -57,21 +57,7 @@
 </section>
       <section id="excelPanel" class="card hidden">
         <div class="section-title-row"><h2>엑셀 가져오기</h2><button id="cancelExcel" class="text-btn">닫기</button></div>
-        <p id="excelFileName" class="muted"></p>
-        <p class="muted">파일은 기기 안에서만 읽습니다. 카드사 파일을 한 개씩 등록해주세요.</p>
-        <div class="excel-fields">
-          <label>카드사<select id="excelIssuer"><option>우리카드</option><option>KB국민카드</option><option>현대카드</option><option>기타카드</option></select></label>
-          <label>연도 없는 날짜의 기준 연도<input id="excelYear" type="number" min="2000" max="2100" /></label>
-          <label>시트<select id="excelSheet"></select></label>
-          <label>카드번호 열이 없을 때 끝 4자리<input id="excelCard" inputmode="numeric" maxlength="4" placeholder="예: 0322" /></label>
-          <label>명세서 청구월 (선택)<input id="excelBillingMonth" type="month" /></label>
-        </div>
-        <p class="muted">우리·국민 결제일은 14일 기준입니다. 청구월은 명세서에 표시된 경우만 선택하세요. 비워두면 이용일 기준 예상으로 표시합니다.</p>
-        <details id="excelMapping"><summary>열 연결 확인 / 다른 형식 지정</summary>
-          <label>제목 행 번호<input id="excelHeaderRow" type="number" min="1" value="2" /></label>
-          <button id="excelRemap" class="mini-btn">이 행에서 열 다시 찾기</button><div id="excelColumns" class="excel-fields"></div>
-        </details>
-        <button id="analyzeExcel" class="full-btn">선택한 설정으로 내역 읽기</button>
+        <p class="muted">파일의 날짜에 맞춰 월별로 나누어 등록합니다. 파일은 기기 안에서만 읽습니다.</p><div id="excelIssues"></div>
         <div id="excelStatus" role="status" class="import-status"></div>
       </section>
 
@@ -107,7 +93,7 @@
         <div id="merchantGroups" class="bulk-tools"></div>
         <div class="review-filter-bar"><span id="reviewFilterStatus" role="status"></span><button id="clearReviewFilters" class="mini-btn" hidden>필터 해제 · 전체 보기</button></div>
         <div class="bulk-tools"><button id="selectUnclassified" class="mini-btn">미분류 모두 선택</button><select id="bulkCategory" aria-label="일괄 분류 업종"></select><button id="applyBulkCategory" class="mini-btn">선택 항목 일괄 분류</button></div>
-        <div id="reviewList" class="review-list"></div>
+        <div id="reviewTools"></div><div id="reviewPager" class="review-pager"></div><div id="reviewList" class="review-list"></div>
         <button id="saveReviewedBtn" class="full-btn">이대로 등록</button>
       </section>
 
@@ -154,10 +140,10 @@
 
   <div id="toast" class="toast"></div>
 
-  <script src="./excel-core.js?v=1.1.0"></script>
-  <script src="./app.js?v=1.1.0"></script>
-  <script src="./excel-ui.js?v=1.1.0"></script>
-  <script src="./chart-callouts.js?v=1.1.0"></script><script src="./dashboard.js?v=1.1.0"></script>
-  <script src="./refresh.js?v=1.1.0"></script>
+  <script src="./excel-core.js?v=1.1.1"></script>
+  <script src="./app.js?v=1.1.1"></script>
+  <script src="./batch-core.js?v=1.1.1"></script><script src="./batch-ui.js?v=1.1.1"></script><script src="./excel-ui.js?v=1.1.1"></script>
+  <script src="./chart-callouts.js?v=1.1.1"></script><script src="./dashboard.js?v=1.1.1"></script>
+  <script src="./refresh.js?v=1.1.1"></script>
 </body>
 </html>

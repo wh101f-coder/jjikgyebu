@@ -11,7 +11,7 @@ if(typeof document!=='undefined'){
   document.body.append(indicator);
   let start=null,distance=0,busy=false,checking=false,lastCheck=0;
   const versionButton=document.querySelector('#appVersion');
-  const blocked=()=>!!document.querySelector('dialog[open]')||state.pending.length>0;
+  const blocked=()=>!!document.querySelector('dialog[open]')||state.pending.length>0||(typeof excelBusy!=='undefined'&&excelBusy);
   function reset(){start=null;distance=0;indicator.classList.remove('visible');}
   async function latest(){
     const response=await fetch('./release.json?check='+Date.now(),{cache:'no-store',signal:AbortSignal.timeout(12000)});
