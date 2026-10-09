@@ -52,3 +52,36 @@ test('batch commit stores every month and sheet atomically in isolated memory',(
  const saved=JSON.parse(store.get('jjig_txs'));assert.equal(saved.length,5);assert.deepEqual(saved.slice(1).map(t=>t.date.slice(0,7)),['2025-01','2025-02','2025-03','2025-04']);assert.equal(context.state.month,'2025-04');assert.equal(JSON.parse(store.get('jjig_excel_imports')).length,4);
  context.state.pending=pending;context.excelSession={ready:true,keys:[]};context.localStorage.setItem=()=>{throw Error('quota');};const before=context.state.txs;vm.runInContext('commitExcel()',context);assert.equal(context.state.txs,before);assert.equal(context.state.pending.length,4);
 });
+test('generic cell normalization handles Excel serials, spaced and short dates and integral decimals',()=>{
+ const E=require('./excel-core.js');
+ const serial=(Date.UTC(2026,0,5)-Date.UTC(1899,11,30))/86400000;
+ for(const d of [serial+.5,new Date(2026,0,5),'2026 . 1 . 5','2026-01-05T12:34:56','26/01/05','２０２６.０１.０５','20260105']){
+  const r=B.parseSheet(sheet([['현대카드'],['카드번호: ****-****-****-0322'],['이용일','업체명','이용금액'],[d,'가상카페','KRW 1,250.00']]));
+  assert.deepEqual(r.errors,[]);assert.equal(r.txs[0].date,'2026-01-05');assert.equal(r.txs[0].amount,1250);assert.equal(r.txs[0].cardLast4,'0322');
+ }
+ assert.equal(E.money('(₩1,250.00)'),-1250);assert.equal(E.money('−1,250'),-1250);
+ assert.equal(E.money('1,250.25'),null);assert.equal(E.date('2026-02-30'),null);
+});
+test('split headings and shuffled columns use the same parser without issuer templates',()=>{
+ const rows=[['카드사','삼성카드'],['카드상품명','가상상품'],['승인','가맹점','이용','청구할인'],['일자','명','금액','금액'],['2026-04-01','가상카페',2400,400],['2026-05-01','가상상점',3000,0]];
+ for(const order of [[0,1,2,3],[3,2,0,1],[1,3,2,0]]){
+  const r=B.parseSheet(sheet(rows.map((row,i)=>i<2?row:order.map(j=>row[j]))));assert.deepEqual(r.errors,[]);assert.equal(r.txs.length,2);assert.equal(r.txs[0].amount-r.txs[0].discount,2000);assert.equal(r.txs[0].cardProduct,'가상상품');
+ }
+});
+test('unfamiliar heading words may be inferred only from unambiguous data patterns',()=>{
+ const r=B.parseSheet(sheet([['신한카드'],['카드번호','****5678'],['일자값','상점기록','지불값'],['2026-01-01','가상카페','1,000원'],['2026-02-01','가상식당','2,000원']]));
+ assert.deepEqual(r.errors,[]);assert.equal(r.found.inferred,true);assert.equal(r.txs.length,2);
+ const ambiguous=B.parseSheet(sheet([['x','y','z','w'],['2026-01-01','가상카페','1,000원','2,000원'],['2026-01-02','가상식당','3,000원','4,000원']]));assert.equal(ambiguous.needsFormat,true);
+});
+test('metadata after a table supplies card information, without reading it as transactions',()=>{
+ const r=B.parseSheet(sheet([['이용일','업체명','이용금액'],['2026-06-01','가상카페',1000],['2026-07-01','가상식당',2000],['카드번호','','****0322'],['카드사: 현대카드']]));
+ assert.deepEqual(r.errors,[]);assert.equal(r.txs.length,2);assert.equal(r.txs[0].issuer,'현대카드');assert.equal(r.txs[1].cardLast4,'0322');
+});
+test('repeated headings can reorder columns while preserving source row and all transactions',()=>{
+ const r=B.parseSheet(sheet([['현대카드'],['이용일','업체명','이용금액','카드번호'],['2026-06-01','가상카페',1000,'1234'],['이용금액','카드번호','이용일','업체명'],[2000,'5678','2026-07-01','가상식당']]));
+ assert.deepEqual(r.errors,[]);assert.equal(r.txs.length,2);assert.equal(r.txs[1].amount,2000);assert.equal(r.txs[1].cardLast4,'5678');assert.equal(r.txs[1].sourceRow,5);
+});
+test('invalid values are identified specifically, not disguised as missing card metadata',()=>{
+ const r=B.parseSheet(sheet([['현대카드'],['이용일','업체명','이용금액','카드번호'],['2026-01-01','가상카페',1000,'1234'],['2026-02-30','가상식당','???','1234']]));
+ assert.equal(r.txs.length,1);assert.match(r.errors.join(),/이용날짜 형식/);assert.match(r.errors.join(),/이용금액 형식/);assert.doesNotMatch(r.errors.join(),/카드번호/);
+});

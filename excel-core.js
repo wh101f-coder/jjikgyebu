@@ -1,6 +1,6 @@
 /* Pure spreadsheet normalization and conservative, occurrence-aware reconciliation. */
 (function(root){
-  const compact=v=>String(v??'').replace(/\s/g,'');
+  const compact=v=>String(v??'').normalize('NFKC').replace(/[\s\u200b\ufeff]/g,'');
   const headerKey=v=>compact(v).replace(/[()（）\[\]·_]/g,'').replace(/원$/,'').toLowerCase();
   const aliases={
     date:['이용일자','이용일','승인일자','승인일','거래일자','거래일','매출일자','이용일시','승인일시','거래일시','사용일자','사용일','date'],
@@ -15,7 +15,7 @@
   function semanticScore(field,h){
     switch(field){
       case 'date':return /청구|결제|예정|취소|만기/.test(h)?0:/(이용|승인|거래|사용|매출).*(일|날짜|date)|^(날짜|거래일시|transactiondate|date)$/.test(h)?8:0;
-      case 'merchant':return /번호|정보|주소|고객|이름|사업자|전화/.test(h)?0:/가맹점|이용.*곳|이용처|사용처|사용장소|상호|업체|상점|merchant|store/.test(h)?8:0;
+      case 'merchant':return /번호|정보|주소|고객|사업자|전화/.test(h)?0:/가맹점|이용.*곳|이용처|사용처|사용장소|상호|업체|상점|merchant|store/.test(h)?8:0;
       case 'amount':return /할인|혜택|취소|환불|청구|결제|원금|수수료|포인트|적립|환율|잔액|횟수|소계|합계|총계/.test(h)||(/해외|외화|usd|달러|\$/.test(h)&&!h.includes('원'))?0:/금액|amount/.test(h)?(h.includes('원')?9:8):0;
       case 'card':return /카드.*(번호|끝자리)|cardnumber/.test(h)?8:0;
       case 'cardProduct':return /카드사/.test(h)?0:/카드.*(상품|명|종류)|cardname/.test(h)?8:0;
@@ -39,7 +39,8 @@
         const values=sample.map(r=>r[i]).filter(v=>String(v??'').trim());
         if(values.length&&['date','merchant','amount','card'].includes(field)){
           const good=values.filter(v=>field==='date'?!!date(v,2024):field==='amount'?money(v)!==null:field==='card'?!!suffix(v):typeof v==='string'&&/[^\d\s.,/:-]/.test(v)).length/values.length;
-          if(good<.5)return 0;score+=good*3;
+          // A malformed cell must remain a row error, not hide an otherwise clear column.
+          if(good===0)return 0;score+=good*3;
         }
         return score;
       });
@@ -62,20 +63,60 @@
         return {header:i,start,map};
       }
     }
+    // Join vertically split headings without spreading merged cells into transaction data.
+    for(let i=0;i<Math.min(150,rows.length);i++)for(let depth=2;depth<=3;depth++){
+      const parts=rows.slice(i,i+depth);if(parts.length!==depth)continue;
+      if(parts.some(r=>r.filter(v=>String(v??'').trim()).length<=2&&r.some(v=>/^(카드사|카드번호|카드상품명|카드명|조회기간)\s*[:：]?/.test(compact(v)))))continue;
+      if(parts.some(r=>r.some(v=>date(v)&&!/^\d{5}(?:\.\d+)?$/.test(String(v)))))continue;
+      const width=Math.max(...parts.map(r=>r.length));
+      const joined=Array.from({length:width},(_,c)=>parts.map(r=>r[c]??'').join(''));
+      const map=columns(joined,rows.slice(i+depth,i+depth+12));
+      if(map.date>=0&&map.merchant>=0&&map.amount>=0)return {header:i,start:i+depth,map};
+    }
+    return inferColumns(rows);
+  }
+  function inferColumns(rows){
+    // Value-based fallback is restricted to unlabelled columns. A known conflicting
+    // heading (e.g. payment date, approval number or foreign amount) always wins.
+    for(let h=0;h<Math.min(150,rows.length-1);h++){
+      const header=rows[h],sample=rows.slice(h+1,h+21).filter(r=>r.some(v=>String(v??'').trim()));
+      if(header.filter(v=>String(v??'').trim()).length<2||header.some(v=>date(v)||money(v)!==null))continue;
+      if(sample.length<2)continue;
+      const map=columns(header,sample),width=Math.max(header.length,...sample.map(r=>r.length));
+      const known=c=>Object.keys(aliases).some(k=>aliases[k].map(headerKey).includes(headerKey(header[c]))||semanticScore(k,compact(header[c]).toLowerCase()));
+      for(const field of ['date','merchant','amount']){
+        if(map[field]>=0)continue;
+        // Do not resolve a genuine semantic tie by choosing a conveniently shaped value.
+        if(header.some(v=>aliases[field].map(headerKey).includes(headerKey(v))||semanticScore(field,compact(v).toLowerCase())))continue;
+        const candidates=[];
+        for(let c=0;c<width;c++){
+          if(known(c)||Object.values(map).includes(c))continue;
+          const values=sample.map(r=>r[c]).filter(v=>String(v??'').trim());
+          if(values.length<2)continue;
+          const good=values.filter(v=>field==='date'?!!date(v)&&(/20\d{2}|년/.test(String(v))||v instanceof Date):field==='amount'?money(v)!==null&&/[,₩원]|KRW/i.test(String(v)):typeof v==='string'&&/[가-힣a-z]/i.test(v)&&!date(v)&&!money(v)&&!/본인|가족|카드|정상|취소|일시불|할부/.test(v)).length;
+          if(good/values.length>=.9)candidates.push(c);
+        }
+        if(candidates.length===1)map[field]=candidates[0];
+      }
+      if(map.date>=0&&map.merchant>=0&&map.amount>=0&&new Set([map.date,map.merchant,map.amount]).size===3)return {header:h,start:h+1,map,inferred:true};
+    }
     return null;
   }
   function money(value){
     if(typeof value==='number')return Number.isSafeInteger(value)?value:null;
-    let s=String(value??'').trim();
+    let s=String(value??'').normalize('NFKC').trim();
     if(!s||s==='-')return null;
-    s=s.replace(/[,\s₩원]/g,'').replace(/^\((\d+)\)$/,'-$1');
+    s=s.replace(/KRW/gi,'').replace(/[,\s₩￦원\u200b\ufeff]/g,'').replace(/[−–]/g,'-').replace(/^\((\d+(?:\.0+)?)\)$/,'-$1').replace(/\.0+$/,'').replace(/^\+/,'');
     return /^-?\d+$/.test(s)&&Number.isSafeInteger(Number(s))?Number(s):null;
   }
   function date(value,year){
     if(value instanceof Date && !isNaN(value))return `${value.getFullYear()}-${String(value.getMonth()+1).padStart(2,'0')}-${String(value.getDate()).padStart(2,'0')}`;
-    const s=String(value??'').trim();
-    let m=s.match(/^(20\d{2})[.\-/년]\s*(\d{1,2})[.\-/월]\s*(\d{1,2})(?:일)?(?:\s.*)?$/);
+    // Excel serial dates (including times); restricted to the supported calendar range.
+    if(typeof value==='number'&&value>=36526&&value<73416){const d=new Date(Date.UTC(1899,11,30)+Math.floor(value)*86400000);return date(d);}
+    const s=String(value??'').normalize('NFKC').replace(/[\u200b\ufeff]/g,'').trim();
+    let m=s.match(/^(20\d{2})\s*[.\-/년]\s*(\d{1,2})\s*[.\-/월]\s*(\d{1,2})(?:일|\.)?(?:[T\s(].*)?$/);
     if(!m&&/^20\d{6}$/.test(s))m=[s,s.slice(0,4),s.slice(4,6),s.slice(6,8)];
+    if(!m){const p=s.match(/^(\d{2})[.\-/]\s*(\d{1,2})[.\-/]\s*(\d{1,2})(?:\s.*)?$/);if(p)m=[s,2000+Number(p[1]),p[2],p[3]];}
     if(!m){const p=s.match(/^(\d{1,2})[.\-/월]\s*(\d{1,2})(?:일)?(?:\s.*)?$/);if(p)m=[s,year,p[1],p[2]];}
     if(!m)return null;
     const [y,mo,d]=m.slice(1).map(Number),check=new Date(Date.UTC(y,mo-1,d));
@@ -83,7 +124,7 @@
     return `${y}-${String(mo).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
   }
   function suffix(value){
-    const s=String(value??'').trim();
+    const s=String(value??'').normalize('NFKC').replace(/\s*\((?:본인|가족|신용|체크)\)\s*$/,'').trim();
     if(/^\d{1,4}$/.test(s))return s.padStart(4,'0');
     return s.match(/(\d{4})\s*$/)?.[1]||'';
   }
@@ -93,23 +134,24 @@
   function parse(rows,options){
     const {map,start,year,issuer,defaultCard='',fileName='',sheetName='',billingMonth='',billedIncludesFee=false}=options;
     const txs=[],errors=[],warnings=[];let summaryRows=0,yearless=false,voidRows=0;
-    const read=(r,k)=>map[k]>=0?r[map[k]]:'';
+    let currentMap={...map};
+    const read=(r,k)=>currentMap[k]>=0?r[currentMap[k]]:'';
     for(let i=start;i<rows.length;i++){
-      const r=rows[i]; if(!r.some(v=>String(v??'').trim()))continue;
-      const repeated=columns(r);if(repeated.date>=0&&repeated.merchant>=0&&repeated.amount>=0)continue;
+      const r=rows[i]; if(!r.some(v=>String(v??'').trim())||options.metadataRows?.has(i))continue;
+      const repeated=columns(r);if(repeated.date>=0&&repeated.merchant>=0&&repeated.amount>=0){currentMap={...repeated};continue;}
       const status=String(read(r,'status')),merchant=String(read(r,'merchant')).trim();
-      if(/소계|합계|총계/.test(status)||/^(소계|합계|총계|청구합계)/.test(merchant)){summaryRows++;continue;}
+      if(/소계|합계|총계/.test(status)||/^(소계|합계|총계|청구합계)/.test(merchant)||/^(소계|합계|총계)$/.test(compact(read(r,'date')))){summaryRows++;continue;}
       const rawDate=read(r,'date');
       // Footnotes and empty headings are not transactions, but transaction-like invalid rows are surfaced.
       if(!String(rawDate??'').trim()&&!merchant)continue;
       const day=options.resolveDate?options.resolveDate(rawDate):date(rawDate,year),amountValue=money(read(r,'amount'));
-      if(!day||!merchant||amountValue===null){errors.push(`${i+1}행: 날짜·업체명·이용금액 확인 필요`);continue;}
+      if(!day||!merchant||amountValue===null){const yearMissing=!year&&/^\d{1,2}[.\-/월]\s*\d{1,2}(?:일)?(?:\s.*)?$/.test(String(rawDate).trim());const missing=[!day?(yearMissing?'이용날짜의 연도':'이용날짜 형식'):'',!merchant?'업체명':'',amountValue===null?'이용금액 형식':''].filter(Boolean);errors.push(`${i+1}행: ${missing.join(' · ')} 확인 필요`);continue;}
       if(/승인취소/.test(status)&&options.excludeApprovalVoids){voidRows++;continue;}
       const foreignValue=String(read(r,'foreign')).replace(/[,\s$]/g,'');
-      if(map.foreign>=0&&foreignValue&&foreignValue!=='-'&&Number(foreignValue)!==0){errors.push(`${i+1}행: 외화 거래는 원화 환산금액 확인이 필요합니다`);continue;}
+      if(currentMap.foreign>=0&&foreignValue&&foreignValue!=='-'&&Number(foreignValue)!==0){errors.push(`${i+1}행: 외화 거래는 원화 환산금액 확인이 필요합니다`);continue;}
       if(/^\d{1,2}[.\-/월]/.test(String(rawDate).trim()))yearless=true;
       const cardLast4=suffix(read(r,'card'))||suffix(defaultCard);
-      const cardProduct=String(read(r,'cardProduct')||'').trim();
+      const cardProduct=String(read(r,'cardProduct')||options.defaultProduct||'').trim();
       if(!cardLast4&&!cardProduct){errors.push(`${i+1}행: 카드번호 또는 카드상품명을 확인해주세요`);continue;}
       const cancelled=/취소|환불/.test(status)||amountValue<0;
       const amount=cancelled?-Math.abs(amountValue):amountValue;

@@ -51,6 +51,11 @@ function rebuildBatch(){
  const notices=[...new Set(excelSession.units.filter(u=>!u.excluded).flatMap(u=>u.result?.warnings||[]))];
  $('#excelStatus').textContent=`${excelSession.units.length}개 시트 확인 · ${state.pending.length}건 읽음 · 확인 필요 ${issues.length}개\n`+[...messages,...notices].join('\n');
  $('#excelIssues').innerHTML=issues.map(({u,index,message})=>`<div class="import-issue"><b>${escapeHtml(u.fileName)} · ${escapeHtml(u.name)}</b><p>${escapeHtml(message)}</p>${u.failure||u.result.needsFormat?'':`<div class="excel-fields"><label>카드사<select data-issuer="${index}"><option value="">파일에서 자동 확인</option>${['우리카드','KB국민카드','현대카드','신한카드','삼성카드','롯데카드','하나카드','NH농협카드','BC카드','기타카드'].map(s=>`<option ${u.options.issuer===s?'selected':''}>${s}</option>`).join('')}</select></label><label>연도가 없을 때만<input data-year="${index}" type="number" placeholder="예: 2026" value="${u.options.year||''}"></label><label>카드번호가 없을 때만<input data-card="${index}" maxlength="4" placeholder="끝 4자리" value="${escapeHtml(u.options.defaultCard||'')}"></label></div><button data-retry="${index}" class="mini-btn">이 정보로 다시 읽기</button>`}<button data-exclude="${index}" class="text-btn">이 시트 제외</button></div>`).join('');
+ issues.forEach(({u,index})=>{
+  const needs={issuer:u.result?.errors?.some(e=>e.includes('카드사를')),year:u.result?.errors?.some(e=>e.includes('연도')),card:u.result?.errors?.some(e=>e.includes('카드번호 또는'))};
+  for(const field of ['issuer','year','card']){const input=$(`[data-${field}="${index}"]`);if(input)input.closest('label').hidden=!needs[field];}
+  const retry=$(`[data-retry="${index}"]`);if(retry)retry.hidden=!Object.values(needs).some(Boolean);
+ });
  $$('[data-retry]').forEach(b=>b.onclick=()=>{const i=Number(b.dataset.retry);excelSession.units[i].options={issuer:$(`[data-issuer="${i}"]`).value,year:$(`[data-year="${i}"]`).value,defaultCard:$(`[data-card="${i}"]`).value};rebuildBatch();});
  $$('[data-exclude]').forEach(b=>b.onclick=()=>{excelSession.units[Number(b.dataset.exclude)].excluded=true;rebuildBatch();});
  $('#saveReviewedBtn').disabled=!excelSession.ready;

@@ -1,6 +1,14 @@
 const http=require('node:http'),fs=require('node:fs'),path=require('node:path');
 const root=__dirname;
 http.createServer((req,res)=>{
+ if(req.url==='/adaptive-test'||req.url==='/adaptive-error-test'){
+  const html=fs.readFileSync(path.join(root,'index.html'),'utf8');
+  const units=[{fileName:'synthetic-hyundai.xls',name:'가상내역',rows:[['이용일','업체명','이용금액'],['2026-01-05','가상카페','1,250.00'],['2026-02-05','가상식당','2,500원'],['카드번호','','****0322'],['카드사: 현대카드']],options:{}}];
+  if(req.url==='/adaptive-error-test')units[0].rows[2][0]='2026-02-30';
+  else units.push({fileName:'synthetic.xls',name:'분리된 제목',rows:[['카드사','삼성카드'],['카드상품명','가상상품'],['승인','가맹점','이용','청구할인'],['일자','명','금액','금액'],['2026-04-01','우아한형제들',2400,400],['2026-05-01','가상상점',3000,0]],options:{}});
+  const fixture='<script>excelSession={units:'+JSON.stringify(units)+',keys:[],ready:false};state.importMode="excel";rebuildBatch();document.querySelector("#excelPanel").classList.remove("hidden");switchTab("import");</script>';
+  res.setHeader('Content-Type','text/html; charset=utf-8');return res.end(html.replace('</body>',fixture+'</body>'));
+ }
  if(req.url==='/compare-test'){
  const html=fs.readFileSync(path.join(root,'index.html'),'utf8');
  const fixture=`<script>state.month='2026-10';state.txs=[['2026-09-01','식비',10000],['2026-10-01','식비',15000],['2026-09-02','취미',20000],['2026-10-02','취미',10000],['2026-10-03','카페',4000]].map(([date,category,amount],i)=>({id:'comparison-'+i,date,category,amount,discount:0,merchant:'가상업체',card:'가상카드'}));render();switchTab('compare');</script>`;

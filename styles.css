@@ -148,3 +148,5 @@ html{overscroll-behavior-y:contain}button.app-version{border:0;padding:4px 2px;b
 .compare-difference{display:block;text-align:right;color:var(--muted);font-size:11px;margin-top:8px}
 @media(max-width:360px){#monthMenuGrid{gap:4px}.compare-totals b{font-size:15px}.compare-bar-row{grid-template-columns:22px minmax(16px,1fr) 84px}.bottom-nav button{padding:7px 3px}}
 .merchant-group small{display:block;font-size:11px;margin-top:4px}.merchant-group.classified{background:#edf6f2;color:#497b69;border-color:#cbe3d8}.merchant-group[aria-pressed=true]{background:#eee3fa;border-color:#a88ac9;color:#70548f}.bulk-history{display:flex;flex-wrap:wrap;gap:8px;margin:12px 0}
+
+.import-issue [hidden]{display:none!important}

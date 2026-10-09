@@ -4,14 +4,24 @@
  function parseSheet(sheet,options={}){
   const found=E.detect(sheet.rows);
   if(!found)return {txs:[],errors:[],needsFormat:true,warnings:[]};
-  const pre=sheet.rows.slice(0,found.header).flat().join(' '),meta=pre+' '+(options.fileName||'')+' '+sheet.name;
+  const metadataRows=new Set();
+  const metadataLabel=/^(?:카드\s*(?:번호|상품명|명|종류|사)|조회\s*(?:기간|연도)|이용\s*기간|대상\s*기간|발급사)\s*[:：]?/;
+  sheet.rows.forEach((row,i)=>{const c=E.columns(row);const isHeader=c.date>=0&&c.merchant>=0&&c.amount>=0;if(i<found.header||i>=found.start&&!isHeader&&row.some(v=>metadataLabel.test(String(v)))&&E.money(row[found.map.amount])===null&&!E.date(row[found.map.date]))metadataRows.add(i);});
+  const metaRows=[...metadataRows].map(i=>sheet.rows[i]);
+  const pre=metaRows.flat().join(' '),meta=pre+' '+(options.fileName||'')+' '+sheet.name;
   const range=[...pre.matchAll(/20\d{2}[.\-/년]\s*\d{1,2}[.\-/월]\s*\d{1,2}/g)].map(m=>E.date(m[0]));
-  const years=[...new Set((pre.match(/20\d{2}/g)||[]).map(Number))];
+  const years=[...new Set((pre.match(/(?<!\d)20\d{2}(?!\d)/g)||[]).map(Number))];
   const start=range[0],end=range[1];
-  const year=Number(options.year)|| (years.length===1?years[0]:undefined);
+  const dataYears=[...new Set(sheet.rows.slice(found.start).map(r=>E.date(r[found.map.date])?.slice(0,4)).filter(Boolean).map(Number))];
+  const year=Number(options.year)|| (years.length===1?years[0]:years.length===0&&dataYears.length===1?dataYears[0]:undefined);
   const fileIssuer=options.issuer||issuer(meta)|| (sheet.rows[found.header].some(v=>String(v).replace(/\s/g,'')==='이용가맹점(은행)명')?'우리카드':'');
   const headerCards=new Set();
-  sheet.rows.slice(0,found.header).forEach(row=>row.forEach((cell,i)=>{if(/^카드\s*번호/.test(String(cell))){const number=E.suffix(String(cell).replace(/^카드\s*번호\s*[:：]?/,''))||E.suffix(row[i+1]);if(number)headerCards.add(number);}}));
+  const products=new Set();
+  metaRows.forEach(row=>row.forEach((cell,i)=>{
+   const text=String(cell).trim();
+   if(/^카드\s*번호/.test(text)){const number=E.suffix(text.replace(/^카드\s*번호\s*[:：]?/,''))||E.suffix(row.slice(i+1).find(v=>String(v??'').trim()));if(number)headerCards.add(number);}
+   if(/^카드\s*(?:상품명|명|종류)\s*[:：]?/.test(text)){const product=text.replace(/^카드\s*(?:상품명|명|종류)\s*[:：]?\s*/,'')||String(row.slice(i+1).find(v=>String(v??'').trim())||'');if(product)products.add(product);}
+  }));
   const defaultCard=options.defaultCard||(headerCards.size===1?[...headerCards][0]:'');
   const resolveDate=v=>{
    const full=E.date(v);if(full)return full;
@@ -33,7 +43,8 @@
    sums[/취소|환불/.test(status)||value<0?1:0]+=Math.abs(value);
   }
   const excludeApprovalVoids=hasVoid&&sourceTotals&&sourceTotals.every((n,i)=>n===sums[i]);
-  const result=E.parse(sheet.rows,{...found,year,issuer:fileIssuer,resolveDate,resolveIssuer,defaultCard,excludeApprovalVoids,fileName:options.fileName,sheetName:sheet.name});
+  const result=E.parse(sheet.rows,{...found,year,issuer:fileIssuer,resolveDate,resolveIssuer,defaultCard,defaultProduct:products.size===1?[...products][0]:'',metadataRows,excludeApprovalVoids,fileName:options.fileName,sheetName:sheet.name});
+  if(found.inferred)result.warnings.push('열 이름과 실제 셀 값의 패턴을 함께 분석했습니다. 등록 전 날짜·업체·금액을 확인해주세요.');
   if(hasVoid&&!excludeApprovalVoids)result.errors.push('승인취소 내역의 포함 여부를 파일 합계로 확인할 수 없습니다. 지출이 이중 차감되지 않도록 확인이 필요합니다.');
   result.warnings=result.warnings.filter(w=>!w.startsWith('연도가 없는'));
   return {...result,found};
