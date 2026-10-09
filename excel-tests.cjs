@@ -72,3 +72,18 @@ test('reconciliation keeps manual categories but does not overwrite new classifi
  assert.equal(E.reconcile([t],[{...t,id:'existing',category:'미분류'}])[0].category,'카페');
  assert.equal(E.reconcile([t],[{...t,id:'existing',category:'친구모임'}])[0].category,'친구모임');
 });
+test('won decorations and accounting signs are accepted without joining separate values',()=>{
+ for(const input of ['\\1,250',"'1,250",'1,250 (원)','1,250 (KRW)','1&nbsp;250','&#8361;1,250'])assert.equal(E.money(input),1250,input);
+ for(const input of ['1,250-','(1,250원)','-₩1,250'])assert.equal(E.money(input),-1250,input);
+ for(const input of ['1,000 2,000','12,34','USD 1,250','1,250 / 100','1,250.50','(-1250)','1,250\n2,000'])assert.equal(E.money(input),null,input);
+});
+test('merged headings expand only header cells and prefer actual numeric amount column',()=>{
+ const input=[['현대카드'],['이용일','가맹점명','이용금액','','카드번호'],['2026-01-01','가상','KRW','1,250','1234'],['2026-01-02','가상','KRW','2,500','1234']];
+ const normalized=E.expandHeadingMerges(input,[{s:{r:1,c:2},e:{r:1,c:3}},{s:{r:2,c:1},e:{r:2,c:2}}]);
+ assert.equal(input[1][3],'');assert.equal(normalized[1][3],'이용금액');assert.equal(normalized[2][2],'KRW');
+ const found=E.detect(normalized);assert.equal(found.map.amount,3);const r=E.parse(normalized,{...found,issuer:'현대카드'});assert.equal(r.errors.length,0);assert.deepEqual(r.txs.map(t=>t.amount),[1250,2500]);
+});
+test('failure diagnostics contain the actual offending cell safely without complete long identifiers',()=>{
+ const r=parse([['이용일','가맹점명','이용금액','카드번호'],['2026-01-01','가상',1000,'1234'],['2026-01-02','가상','금액???','1234']]);
+ assert.match(r.errors[0],/C3/);assert.match(r.errors[0],/금액\?\?\?/);
+});

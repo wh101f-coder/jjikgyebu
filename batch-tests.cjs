@@ -85,3 +85,8 @@ test('invalid values are identified specifically, not disguised as missing card 
  const r=B.parseSheet(sheet([['현대카드'],['이용일','업체명','이용금액','카드번호'],['2026-01-01','가상카페',1000,'1234'],['2026-02-30','가상식당','???','1234']]));
  assert.equal(r.txs.length,1);assert.match(r.errors.join(),/이용날짜 형식/);assert.match(r.errors.join(),/이용금액 형식/);assert.doesNotMatch(r.errors.join(),/카드번호/);
 });
+test('1904-workbook serials preserve use and due dates after raw decoding',()=>{
+ const serial=(Date.UTC(2026,0,5)-Date.UTC(1899,11,30))/86400000-1462;
+ const r=B.parseSheet({date1904:true,...sheet([['현대카드'],['이용일','가맹점명','이용금액','카드번호','결제일'],[serial,'가상',1000,'1234',serial+9]])});
+ assert.deepEqual(r.errors,[]);assert.equal(r.txs[0].date,'2026-01-05');assert.equal(r.txs[0].dueDate,'2026-01-14');
+});

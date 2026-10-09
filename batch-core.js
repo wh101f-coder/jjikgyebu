@@ -12,7 +12,7 @@
   const range=[...pre.matchAll(/20\d{2}[.\-/년]\s*\d{1,2}[.\-/월]\s*\d{1,2}/g)].map(m=>E.date(m[0]));
   const years=[...new Set((pre.match(/(?<!\d)20\d{2}(?!\d)/g)||[]).map(Number))];
   const start=range[0],end=range[1];
-  const dataYears=[...new Set(sheet.rows.slice(found.start).map(r=>E.date(r[found.map.date])?.slice(0,4)).filter(Boolean).map(Number))];
+  const dataYears=[...new Set(sheet.rows.slice(found.start).map(r=>E.date(r[found.map.date],undefined,sheet.date1904)?.slice(0,4)).filter(Boolean).map(Number))];
   const year=Number(options.year)|| (years.length===1?years[0]:years.length===0&&dataYears.length===1?dataYears[0]:undefined);
   const fileIssuer=options.issuer||issuer(meta)|| (sheet.rows[found.header].some(v=>String(v).replace(/\s/g,'')==='이용가맹점(은행)명')?'우리카드':'');
   const headerCards=new Set();
@@ -24,7 +24,7 @@
   }));
   const defaultCard=options.defaultCard||(headerCards.size===1?[...headerCards][0]:'');
   const resolveDate=v=>{
-   const full=E.date(v);if(full)return full;
+   const full=E.date(v,undefined,sheet.date1904);if(full)return full;
    if(start&&end){const candidates=[];for(let y=Number(start.slice(0,4));y<=Number(end.slice(0,4));y++){const d=E.date(v,y);if(d&&d>=start&&d<=end)candidates.push(d);}return candidates.length===1?candidates[0]:null;}
    return E.date(v,year);
   };
@@ -43,7 +43,7 @@
    sums[/취소|환불/.test(status)||value<0?1:0]+=Math.abs(value);
   }
   const excludeApprovalVoids=hasVoid&&sourceTotals&&sourceTotals.every((n,i)=>n===sums[i]);
-  const result=E.parse(sheet.rows,{...found,year,issuer:fileIssuer,resolveDate,resolveIssuer,defaultCard,defaultProduct:products.size===1?[...products][0]:'',metadataRows,excludeApprovalVoids,fileName:options.fileName,sheetName:sheet.name});
+  const result=E.parse(sheet.rows,{...found,year,issuer:fileIssuer,resolveDate,resolveIssuer,defaultCard,defaultProduct:products.size===1?[...products][0]:'',metadataRows,date1904:sheet.date1904,excludeApprovalVoids,fileName:options.fileName,sheetName:sheet.name});
   if(found.inferred)result.warnings.push('열 이름과 실제 셀 값의 패턴을 함께 분석했습니다. 등록 전 날짜·업체·금액을 확인해주세요.');
   if(hasVoid&&!excludeApprovalVoids)result.errors.push('승인취소 내역의 포함 여부를 파일 합계로 확인할 수 없습니다. 지출이 이중 차감되지 않도록 확인이 필요합니다.');
   result.warnings=result.warnings.filter(w=>!w.startsWith('연도가 없는'));

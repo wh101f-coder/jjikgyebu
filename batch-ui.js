@@ -21,11 +21,13 @@ async function acceptExcelFiles(files){
     if(file.size>20*1024*1024)throw Error('이 파일은 20MB를 넘습니다. 나눠서 올려주세요');
     const bytes=await file.arrayBuffer(),hash=[...new Uint8Array(await crypto.subtle.digest('SHA-256',bytes))].map(b=>b.toString(16).padStart(2,'0')).join('');
     if(seen.has(hash))continue;seen.add(hash);
-    const book=XLSX.read(bytes,{type:'array',cellDates:true});
+    // Preserve HTML-disguised XLS text and Excel numeric cells until their column
+    // meaning is known. Automatic date coercion can otherwise alter non-date cells.
+    const book=XLSX.read(bytes,{type:'array',cellDates:false,raw:true});
     for(const name of book.SheetNames){
-     const rows=XLSX.utils.sheet_to_json(book.Sheets[name],{header:1,defval:'',raw:true,blankrows:true});
+     const rows=ExcelImport.expandHeadingMerges(XLSX.utils.sheet_to_json(book.Sheets[name],{header:1,defval:'',raw:true,blankrows:true}),book.Sheets[name]['!merges']||[]);
      if(!rows.some(r=>r.some(v=>String(v).trim())))continue;
-     excelSession.units.push({fileName:file.name,hash,name,rows,options:{}});
+     excelSession.units.push({fileName:file.name,hash,name,rows,date1904:!!book.Workbook?.WBProps?.date1904,options:{}});
     }
    }catch(error){excelSession.units.push({fileName:file.name,name:'',failure:error.message});}
    await new Promise(resolve=>setTimeout(resolve,0));

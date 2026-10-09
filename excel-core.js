@@ -106,13 +106,39 @@
     if(typeof value==='number')return Number.isSafeInteger(value)?value:null;
     let s=String(value??'').normalize('NFKC').trim();
     if(!s||s==='-')return null;
-    s=s.replace(/KRW/gi,'').replace(/[,\s₩￦원\u200b\ufeff]/g,'').replace(/[−–]/g,'-').replace(/^\((\d+(?:\.0+)?)\)$/,'-$1').replace(/\.0+$/,'').replace(/^\+/,'');
+    s=s.replace(/&nbsp;|&#160;|&#xA0;/gi,' ').replace(/&#8361;|&#x20a9;/gi,'₩').replace(/[\u200b\ufeff]/g,'').replace(/[−–]/g,'-').trim();
+    // Korean statements sometimes use the won-font backslash, a text apostrophe,
+    // or an accounting trailing minus. Never join two separate numeric values.
+    s=s.replace(/^'/,'').trim().replace(/^([+-]?)(?:KRW|₩|￦|\\)\s*/i,'$1').replace(/\s*(?:KRW|₩|￦|원|\(원\)|\(KRW\))$/i,'').trim();
+    let negative=false;
+    if(/^\([^()]+\)$/.test(s)){negative=true;s=s.slice(1,-1).trim().replace(/^(?:KRW|₩|￦|\\)\s*/i,'').replace(/\s*(?:KRW|원)$/i,'');}
+    if(/-$/.test(s)){if(negative)return null;negative=true;s=s.slice(0,-1).trim();}
+    if(!/^[+-]?(?:\d+|\d{1,3}(?:,\d{3})+|\d{1,3}(?:[ \u00a0\u202f]\d{3})+)(?:\.0+)?$/.test(s))return null;
+    if(negative&&/^[+-]/.test(s))return null;
+    s=(negative?'-':'')+s.replace(/[, \u00a0\u202f]/g,'').replace(/\.0+$/,'').replace(/^\+/,'');
     return /^-?\d+$/.test(s)&&Number.isSafeInteger(Number(s))?Number(s):null;
   }
-  function date(value,year){
+  function cellDescription(value,column,row){
+    let col='',n=column+1;while(n>0){n--;col=String.fromCharCode(65+n%26)+col;n=Math.floor(n/26);}
+    let text=value instanceof Date?'날짜로 변환된 값 '+value.toISOString():String(value??'');
+    text=text.replace(/\d{12,}/g,s=>s.slice(0,4)+'…'+s.slice(-4));
+    return `${col}${row}: ${text===''?'빈칸':JSON.stringify(text.slice(0,70))}`;
+  }
+  function expandHeadingMerges(rows,merges=[]){
+    const result=rows.map(r=>r.slice());
+    for(const {s,e} of merges){
+      const row=result[s.r],value=row?.[s.c];if(!value||s.r!==e.r||e.c-s.c>20)continue;
+      // Only propagate recognised headings, never transaction amounts, dates or names.
+      if(!Object.keys(aliases).some(k=>aliases[k].map(headerKey).includes(headerKey(value))||semanticScore(k,compact(value).toLowerCase())))continue;
+      if(row.some(v=>date(v)||money(v)!==null))continue;
+      for(let c=s.c+1;c<=e.c;c++)if(!String(row[c]??'').trim())row[c]=value;
+    }
+    return result;
+  }
+  function date(value,year,date1904=false){
     if(value instanceof Date && !isNaN(value))return `${value.getFullYear()}-${String(value.getMonth()+1).padStart(2,'0')}-${String(value.getDate()).padStart(2,'0')}`;
     // Excel serial dates (including times); restricted to the supported calendar range.
-    if(typeof value==='number'&&value>=36526&&value<73416){const d=new Date(Date.UTC(1899,11,30)+Math.floor(value)*86400000);return date(d);}
+    if(typeof value==='number'){const serial=value+(date1904?1462:0);if(serial>=36526&&serial<73416){const d=new Date(Date.UTC(1899,11,30)+Math.floor(serial)*86400000);return date(d);}}
     const s=String(value??'').normalize('NFKC').replace(/[\u200b\ufeff]/g,'').trim();
     let m=s.match(/^(20\d{2})\s*[.\-/년]\s*(\d{1,2})\s*[.\-/월]\s*(\d{1,2})(?:일|\.)?(?:[T\s(].*)?$/);
     if(!m&&/^20\d{6}$/.test(s))m=[s,s.slice(0,4),s.slice(4,6),s.slice(6,8)];
@@ -145,7 +171,7 @@
       // Footnotes and empty headings are not transactions, but transaction-like invalid rows are surfaced.
       if(!String(rawDate??'').trim()&&!merchant)continue;
       const day=options.resolveDate?options.resolveDate(rawDate):date(rawDate,year),amountValue=money(read(r,'amount'));
-      if(!day||!merchant||amountValue===null){const yearMissing=!year&&/^\d{1,2}[.\-/월]\s*\d{1,2}(?:일)?(?:\s.*)?$/.test(String(rawDate).trim());const missing=[!day?(yearMissing?'이용날짜의 연도':'이용날짜 형식'):'',!merchant?'업체명':'',amountValue===null?'이용금액 형식':''].filter(Boolean);errors.push(`${i+1}행: ${missing.join(' · ')} 확인 필요`);continue;}
+      if(!day||!merchant||amountValue===null){const yearMissing=!year&&/^\d{1,2}[.\-/월]\s*\d{1,2}(?:일)?(?:\s.*)?$/.test(String(rawDate).trim());const missing=[!day?(yearMissing?'이용날짜의 연도':'이용날짜 형식'):'',!merchant?'업체명':'',amountValue===null?'이용금액 형식':''].filter(Boolean);const details=[!day?cellDescription(rawDate,currentMap.date,i+1):'',amountValue===null?cellDescription(read(r,'amount'),currentMap.amount,i+1):''].filter(Boolean);errors.push(`${i+1}행: ${missing.join(' · ')} 확인 필요${details.length?' — 읽은 값 '+details.join(' / '):''}`);continue;}
       if(/승인취소/.test(status)&&options.excludeApprovalVoids){voidRows++;continue;}
       const foreignValue=String(read(r,'foreign')).replace(/[,\s$]/g,'');
       if(currentMap.foreign>=0&&foreignValue&&foreignValue!=='-'&&Number(foreignValue)!==0){errors.push(`${i+1}행: 외화 거래는 원화 환산금액 확인이 필요합니다`);continue;}
@@ -163,7 +189,7 @@
       const installments=money(read(r,'installments'))||0;
       if(Math.abs(discount)>Math.abs(amount)||(!cancelled&&discount<0))errors.push(`${i+1}행: 할인금액이 이용금액과 맞지 않습니다`);
       if(discountKnown&&billedAmount!==null&&installments<=1&&amount-discount+(billedIncludesFee?fee:0)!==billedAmount)errors.push(`${i+1}행: 이용금액·혜택금액과 청구금액이 다릅니다. 열 선택을 확인해주세요`);
-      let dueDate= date(read(r,'due'),year);
+      let dueDate= date(read(r,'due'),year,options.date1904);
       if(!dueDate&&billingMonth)dueDate=billingMonth+'-14';
       const rowIssuer=options.resolveIssuer?options.resolveIssuer(read(r,'issuer'),read(r,'card')+' '+cardProduct,cardLast4):issuer;
       if(!rowIssuer){errors.push(`${i+1}행: 카드사를 확인해주세요`);continue;}
@@ -207,6 +233,6 @@
       return {...t,matchId:old.id,previousDiscount:old.discount||0,action:strong&&unchanged?'skip':'review',matchReason:strong?'승인번호 일치':'같은 날짜·카드·업체·금액',category:old.category&&old.category!=='미분류'?old.category:t.category};
     });
   }
-  const api={aliases,columns,detect,money,date,suffix,parse,reconcile,identity};
+  const api={aliases,columns,detect,money,date,suffix,parse,reconcile,identity,expandHeadingMerges};
   if(typeof module!=='undefined'&&module.exports)module.exports=api;else root.ExcelImport=api;
 })(typeof window!=='undefined'?window:this);
