@@ -1,5 +1,5 @@
 
-const APP_VERSION = '1.1.4';
+const APP_VERSION = '1.1.5';
 const CATEGORIES = ['미분류','취미','친구모임','코인노래방','인형뽑기','배달음식','전기차 충전','자동차·타이어','장보기','빵·간식','통신','구독','관리비','세금','보험','식비','카페','편의점','교통','쇼핑','생활','의료','교육','기타'];
 const merchantMappings = JSON.parse(localStorage.getItem('jjig_merchant_mappings')||'{}');
 const cardNames = JSON.parse(localStorage.getItem('jjig_card_names')||'{}');
@@ -334,7 +334,32 @@ async function runOCR(){
   }
 }
 
+const bulkReview={pending:null,names:new Set(),last:[],undo:null};
+function syncBulkReview(){
+ if(bulkReview.pending!==state.pending){bulkReview.pending=state.pending;bulkReview.names.clear();bulkReview.last=[];bulkReview.undo=null;}
+ state.pending.filter(t=>t.category==='미분류').forEach(t=>bulkReview.names.add(displayMerchant(t.merchant)));
+}
+function clearBulkSelection(){state.pending.forEach(t=>t.selected=false);state.reviewFilters.clear();state.reviewView={};state.reviewPage=0;}
+function applyReviewCategory(category){
+ syncBulkReview();const selected=state.pending.filter(t=>t.selected);if(!selected.length)return 0;
+ const changes=selected.map(t=>({t,before:t.category,after:category})),mappingChanges=new Map();
+ selected.forEach(t=>{bulkReview.names.add(displayMerchant(t.merchant));[merchantKey(t.merchant),merchantKey(displayMerchant(t.merchant)),classificationKey(t.merchant)].forEach(k=>{if(!mappingChanges.has(k))mappingChanges.set(k,{before:merchantMappings[k],after:category});});});
+ selected.forEach(t=>{t.category=category;rememberCategory(t.merchant,category);});
+ bulkReview.last=selected.slice();bulkReview.undo={changes,mappingChanges};clearBulkSelection();return selected.length;
+}
+function undoReviewCategory(){
+ syncBulkReview();const action=bulkReview.undo;if(!action)return 0;let count=0;
+ action.changes.forEach(({t,before,after})=>{if(state.pending.includes(t)&&t.category===after){t.category=before;count++;}});
+ action.mappingChanges.forEach(({before,after},key)=>{if(merchantMappings[key]===after){if(before===undefined)delete merchantMappings[key];else merchantMappings[key]=before;}});
+ localStorage.setItem('jjig_merchant_mappings',JSON.stringify(merchantMappings));bulkReview.undo=null;clearBulkSelection();return count;
+}
+function reselectReviewCategory(){
+ syncBulkReview();clearBulkSelection();bulkReview.last.filter(t=>state.pending.includes(t)).forEach(t=>{t.selected=true;state.reviewFilters.add(displayMerchant(t.merchant));});
+}
 function renderReview(removed=state.overlapRemoved){
+  syncBulkReview();
+  $('#undoBulkCategory').hidden=!bulkReview.undo;
+  $('#reselectBulkCategory').hidden=!bulkReview.last.length;
   $('#reviewStats').classList.toggle('hidden',state.importMode==='excel');
   $('#reviewCount').textContent=`${state.pending.length}건`;
   const total=state.pending.reduce((s,t)=>s+t.amount,0);
@@ -581,14 +606,9 @@ $('#editCategory').innerHTML=CATEGORIES.map(c=>'<option>'+c+'</option>').join(''
 $('#bulkCategory').innerHTML=CATEGORIES.filter(c=>c!=='미분류').map(c=>'<option>'+c+'</option>').join('');
 $('#clearReviewFilters').onclick=()=>{collectReview();state.reviewFilters.clear();state.pending.forEach(t=>t.selected=false);renderReview();};
 $('#selectUnclassified').onclick=()=>{collectReview();state.reviewFilters=new Set(state.pending.filter(t=>t.category==='미분류').map(t=>displayMerchant(t.merchant)));state.pending.forEach(t=>t.selected=t.category==='미분류');renderReview();};
-$('#applyBulkCategory').onclick=()=>{
-  collectReview();const category=$('#bulkCategory').value;
-  const selected=state.pending.filter(t=>t.selected);
-  if(!selected.length){toast('분류할 항목을 선택해주세요');return;}
-  selected.forEach(t=>{t.category=category;rememberCategory(t.merchant,category);t.selected=false;});
-  state.pending.filter(t=>t.category==='미분류').forEach(t=>t.category=categoryFor(t.merchant));
-  renderReview();toast(selected.length+'건 분류 완료');
-};
+$('#applyBulkCategory').onclick=()=>{collectReview();const count=applyReviewCategory($('#bulkCategory').value);renderReview();toast(count?count+'건 분류 완료 · 선택 해제됨':'분류할 항목을 선택해주세요');};
+$('#undoBulkCategory').onclick=()=>{collectReview();const count=undoReviewCategory();renderReview();toast(count+'건 분류 실행취소');};
+$('#reselectBulkCategory').onclick=()=>{collectReview();reselectReviewCategory();renderReview();};
 const reclassifiedCount=reclassifyUnclassified();
 render();
 if(reclassifiedCount)toast(`미분류 ${reclassifiedCount}건을 자동 분류했어요`);

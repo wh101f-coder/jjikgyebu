@@ -89,3 +89,16 @@ test('saved unknown categories are repaired without changing manual categories o
  assert.equal(vm.runInContext('reclassifyUnclassified()',c),1);
  const saved=JSON.parse(data.get('jjig_txs'));assert.deepEqual(saved.map(t=>t.category),['카페','친구모임','미분류']);assert.equal(saved[0].merchant,'컴포즈커피_1');assert.equal(saved[0].importIdentity,'original');assert.equal(saved[0].amount,2300);assert.equal(vm.runInContext('reclassifyUnclassified()',c),0);
 });
+test('bulk classification clears filters and protects unrelated rows; undo restores mapping',()=>{
+ run("state.pending=[{merchant:'테스트업체A',category:'미분류',selected:true},{merchant:'테스트업체B',category:'미분류',selected:false},{merchant:'테스트업체A',category:'미분류',selected:false}];state.reviewFilters=new Set(['테스트업체A']);state.reviewView={category:'미분류'}");
+ assert.equal(run("applyReviewCategory('카페')"),1);
+ assert.equal(run('state.reviewFilters.size'),0);assert.equal(run('state.pending.some(t=>t.selected)'),false);
+ assert.equal(run('state.pending[2].category'),'미분류');
+ run("toggleReviewMerchant('테스트업체B');applyReviewCategory('배달음식')");
+ assert.equal(run('state.pending[0].category'),'카페');assert.equal(run('state.pending[1].category'),'배달음식');
+ assert.equal(run('undoReviewCategory()'),1);assert.equal(run('state.pending[1].category'),'미분류');
+ assert.equal(run("categoryFor('테스트업체B')"),'미분류');assert.equal(run('state.pending[0].category'),'카페');
+ run('reselectReviewCategory()');assert.equal(run('state.pending[1].selected'),true);assert.equal(run('state.pending[0].selected'),false);
+ assert.equal(run("bulkReview.names.has('테스트업체A')"),true);
+ run('state.pending=[];syncBulkReview()');assert.equal(run('bulkReview.last.length'),0);assert.equal(run('bulkReview.undo'),null);
+});

@@ -9,7 +9,7 @@
   <meta name="apple-mobile-web-app-title" content="찍계부" />
   <link rel="apple-touch-icon" href="./icons/icon-180.png" />
   <link rel="manifest" href="./manifest.webmanifest" />
-  <link rel="stylesheet" href="./styles.css?v=1.1.4" />
+  <link rel="stylesheet" href="./styles.css?v=1.1.5" />
   <title>찍계부</title>
 </head>
 <body>
@@ -17,7 +17,7 @@
     <header class="topbar">
       <div>
         <div class="eyebrow">MY LEDGER</div>
-        <h1>찍계부 <button type="button" id="appVersion" class="app-version">v1.1.4</button></h1>
+        <h1>찍계부 <button type="button" id="appVersion" class="app-version">v1.1.5</button></h1>
       </div>
       <span class="brand-flower" aria-hidden="true">✿</span>
     </header>
@@ -94,7 +94,7 @@
         <div id="merchantGroups" class="bulk-tools"></div>
         <div class="review-filter-bar"><span id="reviewFilterStatus" role="status"></span><button id="clearReviewFilters" class="mini-btn" hidden>필터 해제 · 전체 보기</button></div>
         <div class="bulk-tools"><button id="selectUnclassified" class="mini-btn">미분류 모두 선택</button><select id="bulkCategory" aria-label="일괄 분류 업종"></select><button id="applyBulkCategory" class="mini-btn">선택 항목 일괄 분류</button></div>
-        <div id="reviewTools"></div><div id="reviewPager" class="review-pager"></div><div id="reviewList" class="review-list"></div>
+        <div class="bulk-history"><button id="undoBulkCategory" class="mini-btn" hidden>분류 실행취소</button><button id="reselectBulkCategory" class="mini-btn" hidden>이전 선택 다시 선택</button></div><div id="reviewTools"></div><div id="reviewPager" class="review-pager"></div><div id="reviewList" class="review-list"></div>
         <button id="saveReviewedBtn" class="full-btn">이대로 등록</button>
       </section>
 
@@ -141,10 +141,10 @@
 
   <div id="toast" class="toast"></div>
 
-  <script src="./excel-core.js?v=1.1.4"></script>
-  <script src="./app.js?v=1.1.4"></script>
-  <script src="./batch-core.js?v=1.1.4"></script><script src="./batch-ui.js?v=1.1.4"></script><script src="./excel-ui.js?v=1.1.4"></script>
-  <script src="./chart-callouts.js?v=1.1.4"></script><script src="./dashboard.js?v=1.1.4"></script>
-  <script src="./refresh.js?v=1.1.4"></script>
+  <script src="./excel-core.js?v=1.1.5"></script>
+  <script src="./app.js?v=1.1.5"></script>
+  <script src="./batch-core.js?v=1.1.5"></script><script src="./batch-ui.js?v=1.1.5"></script><script src="./excel-ui.js?v=1.1.5"></script>
+  <script src="./chart-callouts.js?v=1.1.5"></script><script src="./dashboard.js?v=1.1.5"></script>
+  <script src="./refresh.js?v=1.1.5"></script>
 </body>
 </html>

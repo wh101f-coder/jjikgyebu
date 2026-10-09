@@ -7,10 +7,10 @@ function renderExcelReviewExtras(){
   const count=action=>state.pending.filter(t=>t.action===action).length;
   const totals=state.pending.reduce((s,t)=>({gross:s.gross+t.amount,discount:s.discount+t.discount}),{gross:0,discount:0});
   $('#excelReviewSummary').textContent=`${dates[0]} ~ ${dates.at(-1)} · 신규 ${count('new')}건 · 기존/제외 ${count('skip')}건 · 갱신 ${count('update')}건 · 확인 필요 ${count('review')}건\n파일 합계 ${fmt(totals.gross)} − 할인 ${fmt(totals.discount)} = ${fmt(totals.gross-totals.discount)}\n겹친 거래의 할인 변경은 ‘기존 거래 갱신’, 별도 결제라면 ‘새 거래로 추가’를 선택하세요.`;
-  const names=new Set(state.pending.filter(t=>t.category==='미분류').map(t=>displayMerchant(t.merchant)));
+  const names=new Set(bulkReview.names);
   state.reviewFilters.forEach(name=>names.add(name));
   const groups=Array.from(names).map(name=>[name,state.pending.filter(t=>displayMerchant(t.merchant)===name).length]);
-  $('#merchantGroups').innerHTML=groups.map(([name,count],i)=>`<button class="mini-btn merchant-group" aria-pressed="${state.reviewFilters.has(name)}" data-group="${i}">${escapeHtml(name)} ${count}건</button>`).join('');
+  $('#merchantGroups').innerHTML=groups.map(([name,count],i)=>{const categories=[...new Set(state.pending.filter(t=>displayMerchant(t.merchant)===name).map(t=>t.category))];const done=!categories.includes('미분류');return `<button class="mini-btn merchant-group ${done?'classified':''}" aria-pressed="${state.reviewFilters.has(name)}" data-group="${i}">${escapeHtml(name)} ${count}건<small>${done?'✓ '+escapeHtml(categories.join(' · ')):'미분류 포함'}</small></button>`;}).join('');
   $$('.merchant-group').forEach(button=>button.onclick=()=>{collectReview();toggleReviewMerchant(groups[Number(button.dataset.group)][0]);renderReview();});
 }
 $('#reviewList').addEventListener('change',e=>{if(e.target.matches('.rv-action')){collectReview();renderExcelReviewExtras();}});
