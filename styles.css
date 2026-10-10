@@ -150,3 +150,13 @@ html{overscroll-behavior-y:contain}button.app-version{border:0;padding:4px 2px;b
 .merchant-group small{display:block;font-size:11px;margin-top:4px}.merchant-group.classified{background:#edf6f2;color:#497b69;border-color:#cbe3d8}.merchant-group[aria-pressed=true]{background:#eee3fa;border-color:#a88ac9;color:#70548f}.bulk-history{display:flex;flex-wrap:wrap;gap:8px;margin:12px 0}
 
 .import-issue [hidden]{display:none!important}
+.compare-months>div>small{font-size:12px;color:var(--muted)}
+.compare-months>div>button{width:100%;border:0;border-radius:12px;background:var(--soft);color:var(--ink);font:inherit;font-size:13px;padding:12px 5px;margin-top:7px;min-height:44px}
+.compare-months>div>button[aria-expanded=true]{background:#e4d8f3;box-shadow:inset 0 0 0 1px #bba1d4}
+#compareMonthMenu{background:#faf8fd;border:1px solid #eee8f6;border-radius:18px;padding:12px;margin-bottom:16px}
+#compareMonthMenu[hidden]{display:none}
+#compareMonthTitle{color:var(--muted)}
+#compareYear{appearance:none;border:0;background:transparent;font:inherit;font-weight:700;font-size:18px;color:var(--ink);text-align:center;width:105px;padding:8px}
+#compareMonthGrid{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:5px}
+#compareMonthGrid button{min-height:42px;min-width:0;border:0;border-radius:12px;background:white;color:#736581;font:inherit;font-size:13px;padding:4px}
+#compareMonthGrid button[aria-pressed=true]{background:#a48bc4;color:white;font-weight:700}

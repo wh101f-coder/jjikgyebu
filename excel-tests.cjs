@@ -87,3 +87,12 @@ test('failure diagnostics contain the actual offending cell safely without compl
  const r=parse([['이용일','가맹점명','이용금액','카드번호'],['2026-01-01','가상',1000,'1234'],['2026-01-02','가상','금액???','1234']]);
  assert.match(r.errors[0],/C3/);assert.match(r.errors[0],/금액\?\?\?/);
 });
+test('HTML spreadsheet closing tag whitespace is repaired before decoding and binary input preserved',()=>{
+ const html='<html><meta charset="utf-8"><table><tr><td>가상업체</td   ><td>1,000</td></tr></table></html>';
+ const prepared=E.prepareWorkbookInput(new TextEncoder().encode(html));assert.equal(prepared.type,'string');assert.ok(prepared.data.includes('가상업체</td><td>1,000'));
+ const binary=new Uint8Array([0xd0,0xcf,0x11,0xe0]);assert.equal(E.prepareWorkbookInput(binary).data,binary);assert.equal(E.prepareWorkbookInput(binary).type,'array');
+});
+test('named 이용카드, spaced section subtotals, and installment rounds preserve statement data',()=>{
+ const data=[['현대카드'],['이용일','이용카드','이용가맹점','이용금액','할부/회차','예상적립/할인','결제원금','수수료(이자)'],['2026년 08월 04일','본인 가상 현대카드','가상카페','1,000','',99,'1,000',0],['-','','일 시 불 소계 1 건',0,'',0,1000,0],['2026년 02월 16일','본인 가상 현대카드','가상상점','240,000','24/7',0,'10,000','500'],['-','','할 부 소계 1 건',0,'',0,10000,500],['-','','총 합계 2 건',0,'',0,11000,500]];
+ const r=E.parse(data,{...E.detect(data),issuer:'현대카드'});assert.deepEqual(r.errors,[]);assert.equal(r.txs.length,2);assert.equal(r.summaryRows,3);assert.equal(r.txs[0].cardProduct,'가상 현대카드');assert.equal(r.txs[0].discountKnown,false);assert.equal(r.txs[1].installments,24);assert.equal(r.txs[1].installmentRound,7);assert.equal(r.txs[1].fee,500);assert.equal(r.txs[1].amount,240000);assert.equal(r.txs[1].billedAmount,10000);
+});

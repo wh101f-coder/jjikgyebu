@@ -69,3 +69,9 @@ test('month comparison includes both months, discounts, refunds and multi-select
  assert.equal(run('changeText(0,0)'),'변화 없음');
  assert.equal(ctx.rows.length,5);
 });
+test('comparison month selection changes only intended month and freezes default baseline',()=>{
+ ctx.state={month:'2026-10'};ctx.$=()=>({value:''});
+ run("comparison.base=null;chooseComparisonMonth('target','2026-08')");assert.equal(ctx.state.month,'2026-08');assert.equal(run('comparison.base'),'2026-09');
+ run("chooseComparisonMonth('base','2025-12')");assert.equal(ctx.state.month,'2026-08');assert.equal(run('comparison.base'),'2025-12');
+ run("chooseComparisonMonth('target','2026-13')");assert.equal(ctx.state.month,'2026-08');
+});

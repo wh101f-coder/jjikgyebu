@@ -23,7 +23,8 @@ async function acceptExcelFiles(files){
     if(seen.has(hash))continue;seen.add(hash);
     // Preserve HTML-disguised XLS text and Excel numeric cells until their column
     // meaning is known. Automatic date coercion can otherwise alter non-date cells.
-    const book=XLSX.read(bytes,{type:'array',cellDates:false,raw:true});
+    const input=ExcelImport.prepareWorkbookInput(bytes);
+    const book=XLSX.read(input.data,{type:input.type,cellDates:false,raw:true});
     for(const name of book.SheetNames){
      const rows=ExcelImport.expandHeadingMerges(XLSX.utils.sheet_to_json(book.Sheets[name],{header:1,defval:'',raw:true,blankrows:true}),book.Sheets[name]['!merges']||[]);
      if(!rows.some(r=>r.some(v=>String(v).trim())))continue;

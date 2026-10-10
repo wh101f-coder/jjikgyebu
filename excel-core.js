@@ -10,7 +10,7 @@
     discount:['혜택금액','할인금액','청구할인금액','할인액'],
     billed:['원금','결제원금','청구원금','청구금액','결제금액'],
     approval:['승인번호'],status:['매출구분','거래구분','이용구분','승인상태','상태'],
-    installments:['할부개월','할부기간'],fee:['수수료'],due:['결제일','결제예정일'],issuer:['카드사','카드사명','발급사'],cancel:['취소금액','누적취소금액'],cardProduct:['카드상품명','이용카드명','카드명'],foreign:['해외이용금액($)','외화금액','현지통화금액']
+    installments:['할부개월','할부기간','할부/회차'],fee:['수수료','수수료(이자)'],due:['결제일','결제예정일'],issuer:['카드사','카드사명','발급사'],cancel:['취소금액','누적취소금액'],cardProduct:['카드상품명','이용카드명','카드명','이용카드'],foreign:['해외이용금액($)','외화금액','현지통화금액']
   };
   function semanticScore(field,h){
     switch(field){
@@ -37,6 +37,7 @@
         let score=names.map(headerKey).includes(h)?12:semanticScore(field,compact(row[i]).toLowerCase());
         if(!score)return 0;
         const values=sample.map(r=>r[i]).filter(v=>String(v??'').trim());
+        if(field==='cardProduct'&&values.length&&!values.some(v=>/[가-힣a-z]/i.test(String(v))&&!/^(?:신용|체크)?[\/\s]*(?:본인|가족)$/.test(String(v).trim())))return 0;
         if(values.length&&['date','merchant','amount','card'].includes(field)){
           const good=values.filter(v=>field==='date'?!!date(v,2024):field==='amount'?money(v)!==null:field==='card'?!!suffix(v):typeof v==='string'&&/[^\d\s.,/:-]/.test(v)).length/values.length;
           // A malformed cell must remain a row error, not hide an otherwise clear column.
@@ -135,6 +136,21 @@
     }
     return result;
   }
+  function prepareWorkbookInput(bytes){
+    const view=bytes instanceof Uint8Array?bytes:new Uint8Array(bytes);
+    let encoding='utf-8';
+    if(view[0]===255&&view[1]===254)encoding='utf-16le';
+    else if(view[0]===254&&view[1]===255)encoding='utf-16be';
+    let prefix=new TextDecoder(encoding).decode(view.subarray(0,16384));
+    if(!/^\s*(?:<!doctype\s+html|<html\b|<table\b|<head\b|<meta\b)/i.test(prefix))return {data:bytes,type:'array'};
+    const charset=prefix.match(/charset\s*=\s*["']?([\w-]+)/i)?.[1];
+    if(charset&&!encoding.startsWith('utf-16'))encoding=charset;
+    let html=new TextDecoder(encoding).decode(view);
+    // Browser-tolerated whitespace in closing tags breaks SheetJS's HTML cell
+    // matcher, swallowing the next cell and shifting the rest of that row.
+    html=html.replace(/<\/\s*(td|th|tr|table)\s+>/gi,'</$1>');
+    return {data:html,type:'string'};
+  }
   function date(value,year,date1904=false){
     if(value instanceof Date && !isNaN(value))return `${value.getFullYear()}-${String(value.getMonth()+1).padStart(2,'0')}-${String(value.getDate()).padStart(2,'0')}`;
     // Excel serial dates (including times); restricted to the supported calendar range.
@@ -166,6 +182,7 @@
       const r=rows[i]; if(!r.some(v=>String(v??'').trim())||options.metadataRows?.has(i))continue;
       const repeated=columns(r);if(repeated.date>=0&&repeated.merchant>=0&&repeated.amount>=0){currentMap={...repeated};continue;}
       const status=String(read(r,'status')),merchant=String(read(r,'merchant')).trim();
+      if((!String(read(r,'date')??'').trim()||compact(read(r,'date'))==='-')&&/(?:소계|합계|총계)(?:\d+건)?$/.test(compact(merchant))){summaryRows++;continue;}
       if(/소계|합계|총계/.test(status)||/^(소계|합계|총계|청구합계)/.test(merchant)||/^(소계|합계|총계)$/.test(compact(read(r,'date')))){summaryRows++;continue;}
       const rawDate=read(r,'date');
       // Footnotes and empty headings are not transactions, but transaction-like invalid rows are surfaced.
@@ -177,7 +194,8 @@
       if(currentMap.foreign>=0&&foreignValue&&foreignValue!=='-'&&Number(foreignValue)!==0){errors.push(`${i+1}행: 외화 거래는 원화 환산금액 확인이 필요합니다`);continue;}
       if(/^\d{1,2}[.\-/월]/.test(String(rawDate).trim()))yearless=true;
       const cardLast4=suffix(read(r,'card'))||suffix(defaultCard);
-      const cardProduct=String(read(r,'cardProduct')||options.defaultProduct||'').trim();
+      const productText=String(read(r,'cardProduct')||options.defaultProduct||'').trim();
+      const cardProduct=/[가-힣a-z]/i.test(productText)?productText.replace(/^(?:본인|가족)\s+/,''):'';
       if(!cardLast4&&!cardProduct){errors.push(`${i+1}행: 카드번호 또는 카드상품명을 확인해주세요`);continue;}
       const cancelled=/취소|환불/.test(status)||amountValue<0;
       const amount=cancelled?-Math.abs(amountValue):amountValue;
@@ -186,14 +204,17 @@
       discount=discount??0;
       if(cancelled){discount=-Math.abs(discount);if(billedAmount!==null)billedAmount=-Math.abs(billedAmount);}
       const fee=money(read(r,'fee'))||0;
-      const installments=money(read(r,'installments'))||0;
+      const installmentText=compact(read(r,'installments')),pair=installmentText.match(/^(\d+)\/(\d+)$/);
+      const installments=pair?Number(pair[1]):money(read(r,'installments'))||0;
+      const installmentRound=pair?Number(pair[2]):null;
+      if(pair&&(installments<2||installmentRound<1||installmentRound>installments)){errors.push(`${i+1}행: 할부개월·회차 확인 필요`);continue;}
       if(Math.abs(discount)>Math.abs(amount)||(!cancelled&&discount<0))errors.push(`${i+1}행: 할인금액이 이용금액과 맞지 않습니다`);
       if(discountKnown&&billedAmount!==null&&installments<=1&&amount-discount+(billedIncludesFee?fee:0)!==billedAmount)errors.push(`${i+1}행: 이용금액·혜택금액과 청구금액이 다릅니다. 열 선택을 확인해주세요`);
       let dueDate= date(read(r,'due'),year,options.date1904);
       if(!dueDate&&billingMonth)dueDate=billingMonth+'-14';
       const rowIssuer=options.resolveIssuer?options.resolveIssuer(read(r,'issuer'),read(r,'card')+' '+cardProduct,cardLast4):issuer;
       if(!rowIssuer){errors.push(`${i+1}행: 카드사를 확인해주세요`);continue;}
-      const t={date:day,merchant,amount,discount,discountKnown,billedAmount,billedIncludesFee,fee,installments,issuer:rowIssuer,cardLast4,cardProduct,
+      const t={date:day,merchant,amount,discount,discountKnown,billedAmount,billedIncludesFee,fee,installments,installmentRound,issuer:rowIssuer,cardLast4,cardProduct,
         cardId:rowIssuer+':'+(cardLast4||'상품:'+compact(cardProduct)),card:cardProduct||rowIssuer+' '+cardLast4,approvalNumber:String(read(r,'approval')??'').trim(),
         status:cancelled?'취소':'이용',sourceType:'excel',sourceName:fileName,sourceSheet:sheetName,sourceRow:i+1,
         dueDate,dueConfirmed:!!dueDate};
@@ -233,6 +254,6 @@
       return {...t,matchId:old.id,previousDiscount:old.discount||0,action:strong&&unchanged?'skip':'review',matchReason:strong?'승인번호 일치':'같은 날짜·카드·업체·금액',category:old.category&&old.category!=='미분류'?old.category:t.category};
     });
   }
-  const api={aliases,columns,detect,money,date,suffix,parse,reconcile,identity,expandHeadingMerges};
+  const api={aliases,columns,detect,money,date,suffix,parse,reconcile,identity,expandHeadingMerges,prepareWorkbookInput};
   if(typeof module!=='undefined'&&module.exports)module.exports=api;else root.ExcelImport=api;
 })(typeof window!=='undefined'?window:this);

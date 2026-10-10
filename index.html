@@ -9,7 +9,7 @@
   <meta name="apple-mobile-web-app-title" content="찍계부" />
   <link rel="apple-touch-icon" href="./icons/icon-180.png" />
   <link rel="manifest" href="./manifest.webmanifest" />
-  <link rel="stylesheet" href="./styles.css?v=1.1.7" />
+  <link rel="stylesheet" href="./styles.css?v=1.1.8" />
   <title>찍계부</title>
 </head>
 <body>
@@ -17,7 +17,7 @@
     <header class="topbar">
       <div>
         <div class="eyebrow">MY LEDGER</div>
-        <h1>찍계부 <button type="button" id="appVersion" class="app-version">v1.1.7</button></h1>
+        <h1>찍계부 <button type="button" id="appVersion" class="app-version">v1.1.8</button></h1>
       </div>
       <span class="brand-flower" aria-hidden="true">✿</span>
     </header>
@@ -36,7 +36,7 @@
       </section>
 <div id="calendarPane" class="tab-pane"><section class="card calendar-card"><div class="section-title-row"><h2>이달의 기록</h2><span class="muted">할인 반영 · 원</span></div><div class="weekdays"><span>일</span><span>월</span><span>화</span><span>수</span><span>목</span><span>금</span><span>토</span></div><div id="calendarGrid" class="calendar-grid"></div></section><section class="card day-card"><div class="section-title-row"><h2 id="dayTitle">날짜를 선택하세요</h2><button class="text-btn" id="manualAddBtn">+ 직접 등록</button></div><div id="daySummary" class="muted"></div><div id="groupedList"></div><div id="emptyState" class="empty">이날 등록된 지출이 없어요</div></section></div>
 <div id="statsPane" class="tab-pane hidden"><section class="card"><div class="section-title-row"><h2>어디에 썼을까?</h2><div class="chart-toggle"><button id="donutMode" aria-pressed="true">원</button><button id="stripMode" aria-pressed="false">띠</button></div></div><div id="expenseChart"></div><div id="selectionSummary" role="status"></div><button id="clearStats" class="text-btn" hidden>선택 해제</button></section><section class="card"><p class="muted">업종을 여러 개 눌러 함께 볼 수 있어요</p><div id="categoryLegend"></div></section><section class="card"><h2>선택한 지출</h2><div id="statsList" class="compact-list"></div></section><div id="coachCard" class="coach card"></div></div>
-<div id="comparePane" class="tab-pane hidden"><section class="card"><div class="section-title-row"><h2>두 달을 나란히</h2><button id="clearCompare" class="text-btn" hidden>선택 해제</button></div><div class="compare-months"><label>기준 월<input id="compareBase" type="month" /></label><span aria-hidden="true">→</span><label>비교 월<input id="compareTarget" type="month" /></label></div><div id="compareSummary" role="status"></div><p class="compare-note muted">등록한 내역의 최종지출(할인·환불 반영)을 비교해요. 월 전체 내역이 아닐 수 있어요.</p><div id="compareCategories" class="compare-chips" aria-label="비교할 업종"></div><div id="compareRows"></div></section></div>
+<div id="comparePane" class="tab-pane hidden"><section class="card"><div class="section-title-row"><h2>두 달을 나란히</h2><button id="clearCompare" class="text-btn" hidden>선택 해제</button></div><div class="compare-months"><div><small>기준 월</small><input id="compareBase" type="hidden" /><button id="compareBaseToggle" type="button" aria-expanded="false" aria-controls="compareMonthMenu"></button></div><span aria-hidden="true">→</span><div><small>비교 월</small><input id="compareTarget" type="hidden" /><button id="compareTargetToggle" type="button" aria-expanded="false" aria-controls="compareMonthMenu"></button></div></div><div id="compareMonthMenu" hidden><div class="section-title-row"><small id="compareMonthTitle"></small><button id="closeCompareMonth" class="text-btn" type="button">닫기</button></div><div class="year-navigation"><button id="comparePreviousYear" type="button" aria-label="비교 월 메뉴 이전 연도">‹</button><select id="compareYear" aria-label="비교 월 메뉴 연도"></select><button id="compareNextYear" type="button" aria-label="비교 월 메뉴 다음 연도">›</button></div><div id="compareMonthGrid" aria-label="비교 월 선택"></div></div><div id="compareSummary" role="status"></div><p class="compare-note muted">등록한 내역의 최종지출(할인·환불 반영)을 비교해요. 월 전체 내역이 아닐 수 있어요.</p><div id="compareCategories" class="compare-chips" aria-label="비교할 업종"></div><div id="compareRows"></div></section></div>
 <div id="importPane" class="tab-pane hidden"><section class="card"><h2>내역 가져오기</h2>        <div class="hero-actions">
           <label id="excelDrop" class="primary-action">
             <input id="excelInput" aria-label="카드 엑셀 파일" type="file" accept=".xls,.xlsx" multiple />
@@ -141,10 +141,10 @@
 
   <div id="toast" class="toast"></div>
 
-  <script src="./excel-core.js?v=1.1.7"></script>
-  <script src="./app.js?v=1.1.7"></script>
-  <script src="./batch-core.js?v=1.1.7"></script><script src="./batch-ui.js?v=1.1.7"></script><script src="./excel-ui.js?v=1.1.7"></script>
-  <script src="./chart-callouts.js?v=1.1.7"></script><script src="./dashboard.js?v=1.1.7"></script>
-  <script src="./refresh.js?v=1.1.7"></script>
+  <script src="./excel-core.js?v=1.1.8"></script>
+  <script src="./app.js?v=1.1.8"></script>
+  <script src="./batch-core.js?v=1.1.8"></script><script src="./batch-ui.js?v=1.1.8"></script><script src="./excel-ui.js?v=1.1.8"></script>
+  <script src="./chart-callouts.js?v=1.1.8"></script><script src="./dashboard.js?v=1.1.8"></script>
+  <script src="./refresh.js?v=1.1.8"></script>
 </body>
 </html>

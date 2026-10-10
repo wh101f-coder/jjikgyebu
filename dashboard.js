@@ -100,7 +100,7 @@ function renderStats(txs){
   });
 }
 
-const comparison={base:null,selected:new Set()};
+const comparison={base:null,selected:new Set(),picker:null,year:2026};
 function previousMonth(month){const [y,m]=month.split('-').map(Number);return m===1?`${y-1}-12`:`${y}-${String(m-1).padStart(2,'0')}`;}
 function comparisonData(txs,base,target,selected=new Set()){
  const before=txs.filter(t=>t.date.startsWith(base)),after=txs.filter(t=>t.date.startsWith(target));
@@ -115,7 +115,33 @@ function changeText(before,after){
  if(before<=0)return before===0&&after>0?'새 지출':'환불 반영 · 금액 비교';
  return `${delta>0?'↑':'↓'} ${Number((Math.abs(delta)/before*100).toFixed(1))}% ${delta>0?'증가':'감소'}`;
 }
+function chooseComparisonMonth(role,month){
+ if(!/^\d{4}-(?:0[1-9]|1[0-2])$/.test(month))return;
+ if(role==='base')comparison.base=month;
+ else {comparison.base??=previousMonth(state.month);state.month=month;$('#monthPicker').value=month;}
+ comparison.picker=null;
+}
+function renderComparisonMonthMenu(){
+ const base=comparison.base||previousMonth(state.month),target=state.month;
+ for(const [role,month] of [['base',base],['target',target]]){
+  const button=$('#compare'+(role==='base'?'Base':'Target')+'Toggle');
+  button.textContent=month.slice(0,4)+'년 '+Number(month.slice(5))+'월 ⌄';
+  button.setAttribute('aria-label',(role==='base'?'기준 월':'비교 월')+' 선택, '+button.textContent.replace(' ⌄',''));
+  button.setAttribute('aria-expanded',String(comparison.picker===role));
+ }
+ $('#compareMonthMenu').hidden=!comparison.picker;if(!comparison.picker)return;
+ $('#compareMonthTitle').textContent=comparison.picker==='base'?'기준 월 선택':'비교 월 선택';
+ const y=comparison.year;$('#compareYear').innerHTML=Array.from({length:Math.max(2100,y)-Math.min(2000,y)+1},(_,i)=>Math.min(2000,y)+i).map(v=>`<option value="${v}" ${v===y?'selected':''}>${v}년</option>`).join('');
+ const selected=comparison.picker==='base'?base:target;
+ $('#compareMonthGrid').innerHTML=Array.from({length:12},(_,i)=>{const month=`${y}-${String(i+1).padStart(2,'0')}`;return `<button type="button" data-compare-month="${month}" aria-pressed="${month===selected}">${i+1}월</button>`;}).join('');
+ $$('[data-compare-month]').forEach(b=>b.onclick=()=>{const role=comparison.picker;chooseComparisonMonth(role,b.dataset.compareMonth);render();$('#compare'+(role==='base'?'Base':'Target')+'Toggle').focus();});
+}
+function openComparisonMonth(role){
+ const month=role==='base'?(comparison.base||previousMonth(state.month)):state.month;
+ comparison.picker=comparison.picker===role?null:role;comparison.year=Number(month.slice(0,4));renderComparisonMonthMenu();
+}
 function renderComparison(){
+ renderComparisonMonthMenu();
  const base=comparison.base||previousMonth(state.month),target=state.month;
  const available=comparisonData(state.txs,base,target);
  const names=new Set(available.rows.map(r=>r.name));comparison.selected.forEach(n=>{if(!names.has(n))comparison.selected.delete(n);});
@@ -140,6 +166,12 @@ function selectYear(year){state.month=String(Math.min(9999,Math.max(1000,year)))
 $('#previousYear').onclick=()=>selectYear(monthMenuYear-1);
 $('#nextYear').onclick=()=>selectYear(monthMenuYear+1);
 $('#monthMenuYear').onchange=e=>selectYear(Number(e.target.value));
+$('#compareBaseToggle').onclick=()=>openComparisonMonth('base');
+$('#compareTargetToggle').onclick=()=>openComparisonMonth('target');
+$('#closeCompareMonth').onclick=()=>{comparison.picker=null;renderComparisonMonthMenu();};
+$('#comparePreviousYear').onclick=()=>{comparison.year=Math.max(2000,comparison.year-1);renderComparisonMonthMenu();};
+$('#compareNextYear').onclick=()=>{comparison.year=Math.min(2100,comparison.year+1);renderComparisonMonthMenu();};
+$('#compareYear').onchange=e=>{comparison.year=Number(e.target.value);renderComparisonMonthMenu();};
 $('#compareBase').onchange=e=>{if(/^\d{4}-\d{2}$/.test(e.target.value)){comparison.base=e.target.value;renderComparison();}};
 $('#compareTarget').onchange=e=>{if(/^\d{4}-\d{2}$/.test(e.target.value)){state.month=e.target.value;$('#monthPicker').value=state.month;render();}};
 $('#clearCompare').onclick=()=>{comparison.selected.clear();renderComparison();};
