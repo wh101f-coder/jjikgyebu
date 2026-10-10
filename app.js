@@ -1,5 +1,5 @@
 
-const APP_VERSION = '1.1.8';
+const APP_VERSION = '1.1.9';
 const CATEGORIES = ['미분류','취미','친구모임','코인노래방','인형뽑기','배달음식','전기차 충전','자동차·타이어','장보기','빵·간식','통신','구독','관리비','세금','보험','식비','카페','편의점','교통','쇼핑','생활','의료','교육','기타'];
 const merchantMappings = JSON.parse(localStorage.getItem('jjig_merchant_mappings')||'{}');
 const cardNames = JSON.parse(localStorage.getItem('jjig_card_names')||'{}');
@@ -376,8 +376,8 @@ function renderReview(removed=state.overlapRemoved){
   $('#clearReviewFilters').hidden=!state.reviewFilters.size;
   $('#saveReviewedBtn').textContent=state.importMode==='excel'?`전체 ${state.pending.length}건 등록 처리`:`전체 ${state.pending.length}건 등록`;
   $('#reviewList').innerHTML=visible.map(({t,i})=>`
-    <details class="review-item" data-i="${i}"><summary><span><b>${escapeHtml(displayMerchant(t.merchant))}</b><small>${t.date} · ${escapeHtml(t.category)} · ${escapeHtml(cardLabel(t))}</small></span><strong>${fmt(t.amount-t.discount)}</strong></summary>
-      <label class="review-select"><input type="checkbox" class="rv-selected" ${t.selected?'checked':''} aria-label="${escapeHtml(t.merchant)} 선택" /> 선택</label>
+    <details class="review-item" data-i="${i}" ${state.reviewView?.needsAttention?'open':''}><summary><span><b>${escapeHtml(displayMerchant(t.merchant))}</b><small>${t.date} · ${escapeHtml(t.category)} · ${escapeHtml(cardLabel(t))}${t.installmentStatements?.length>1?' · 할부 구매 1건 / 명세서 '+t.installmentStatements.length+'개월':''}</small></span><strong>${fmt(t.amount-t.discount)}</strong></summary>
+      ${reviewProblem(t)?`<p class="review-warning">${escapeHtml(reviewProblem(t))}</p>`:''}<label class="review-select"><input type="checkbox" class="rv-selected" ${t.selected?'checked':''} aria-label="${escapeHtml(t.merchant)} 선택" /> 선택</label>
       <div>
         <input class="rv-merchant" aria-label="업체명" value="${escapeHtml(displayMerchant(t.merchant))}" />
         <div class="review-meta">
@@ -390,7 +390,7 @@ function renderReview(removed=state.overlapRemoved){
       <div style="text-align:right">
         <input class="rv-amount" type="number" value="${t.amount}" style="text-align:right;font-weight:850;max-width:120px" />
         <label class="discount-field">할인 <input class="rv-discount" aria-label="할인금액" type="number" value="${t.discount||0}" />원 ${t.discountNeedsReview?'· 확인 필요':''}${t.discountKnown===false?'· 미확인':''}</label>
-        ${t.sourceType==='excel'?`<div class="tx-sub">${t.status}${t.installments>1?' · '+t.installments+'개월 할부':''}</div><label class="decision-label">등록 처리<select class="rv-action" aria-label="등록 처리"><option value="new" ${t.action==='new'?'selected':''}>새 거래로 추가</option><option value="skip" ${t.action==='skip'?'selected':''}>기존 거래 / 제외</option>${t.matchId?`<option value="review" ${t.action==='review'?'selected':''}>겹침 확인 필요</option><option value="update" ${t.action==='update'?'selected':''}>기존 거래 갱신</option>`:''}</select></label>${t.matchId?`<small>${escapeHtml(t.matchReason)} · 기존 할인 ${fmt(t.previousDiscount)}</small>`:''}`:''}
+        ${t.sourceType==='excel'?`<div class="tx-sub">${t.adjustmentKind==='statementDiscount'?'명세서 청구할인':t.adjustmentKind==='annualFee'?'연회비':t.status}${t.installments>1?' · '+t.installments+'개월 할부':''}</div><label class="decision-label">이 항목은 어떻게 할까요?<select class="rv-action" aria-label="등록 처리"><option value="new" ${t.action==='new'?'selected':''}>다른 결제예요 · 별도 추가</option><option value="skip" ${t.action==='skip'?'selected':''}>이미 있어요 · 추가하지 않기</option>${t.matchId?`<option value="review" ${t.action==='review'?'selected':''}>같은 결제인지 선택해 주세요</option><option value="update" ${t.action==='update'?'selected':''}>같은 결제예요 · 정보 바꾸기</option>`:''}</select></label>${t.matchId?`<small>${escapeHtml(t.matchReason)} · 기존 할인 ${fmt(t.previousDiscount)}</small>`:''}`:''}
         <select aria-label="업종" class="rv-category" style="border:0;background:#f0f0ec;border-radius:8px;padding:4px;margin-top:4px">
           ${CATEGORIES.map(c=>`<option ${c===t.category?'selected':''}>${c}</option>`).join('')}
         </select>
@@ -424,7 +424,18 @@ function collectReview(){
   }
   localStorage.setItem('jjig_card_names',JSON.stringify(cardNames));
 }
-function validTransaction(t){return Number.isSafeInteger(t.amount)&&t.amount!==0&&Number.isSafeInteger(t.discount??0)&&Math.abs(t.discount??0)<=Math.abs(t.amount)&&((t.discount??0)===0||Math.sign(t.discount)===Math.sign(t.amount));}
+function reviewProblem(t){
+ if(t.action==='skip')return '';
+ if(t.action==='review')return t.installments>1?'같은 할부 구매일 수 있어요. 한 번만 반영할지 선택해 주세요.':'이미 있는 내역과 날짜·카드·업체·금액이 같아요. 중복인지 선택해 주세요.';
+ if(t.sourceType==='excel'&&t.adjustmentKind==='statementDiscount'&&t.amount===0&&Number.isSafeInteger(t.discount)&&t.discount>0&&t.billedAmount===-t.discount)return '';
+ if(!Number.isSafeInteger(t.amount))return '이용금액을 원 단위 숫자로 입력해 주세요.';
+ if(t.amount===0)return '이용금액이 0원이에요. 실제 지출인지 확인하거나 이 항목을 제외해 주세요.';
+ if(!Number.isSafeInteger(t.discount??0))return '할인금액을 원 단위 숫자로 입력해 주세요.';
+ if(Math.abs(t.discount??0)>Math.abs(t.amount))return '할인금액이 이용금액보다 커요.';
+ if((t.discount??0)!==0&&Math.sign(t.discount)!==Math.sign(t.amount))return '환불은 이용금액과 할인금액을 함께 음수로 입력해 주세요.';
+ return '';
+}
+function validTransaction(t){return !reviewProblem({...t,action:'new'});}
 function monthlyTotals(txs,ym){
   return txs.filter(t=>t.date.startsWith(ym)).reduce((sum,t)=>{
     sum.gross+=Number(t.amount)||0;sum.discount+=Number(t.discount)||0;

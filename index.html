@@ -9,7 +9,7 @@
   <meta name="apple-mobile-web-app-title" content="찍계부" />
   <link rel="apple-touch-icon" href="./icons/icon-180.png" />
   <link rel="manifest" href="./manifest.webmanifest" />
-  <link rel="stylesheet" href="./styles.css?v=1.1.8" />
+  <link rel="stylesheet" href="./styles.css?v=1.1.9" />
   <title>찍계부</title>
 </head>
 <body>
@@ -17,7 +17,7 @@
     <header class="topbar">
       <div>
         <div class="eyebrow">MY LEDGER</div>
-        <h1>찍계부 <button type="button" id="appVersion" class="app-version">v1.1.8</button></h1>
+        <h1>찍계부 <button type="button" id="appVersion" class="app-version">v1.1.9</button></h1>
       </div>
       <span class="brand-flower" aria-hidden="true">✿</span>
     </header>
@@ -89,12 +89,12 @@
         </div>
         <div id="reviewStats" class="stats-grid"></div>
         <div id="excelReviewSummary" class="import-status hidden"></div>
-        <div id="excelConflictTools" class="bulk-tools hidden"><button id="skipExcelMatches" class="mini-btn">겹친 항목 모두 기존 거래로 처리</button></div>
+        <div id="excelConflictTools" class="bulk-tools hidden"><button id="skipExcelMatches" class="mini-btn">같은 결제로 표시된 항목 모두 추가하지 않기</button></div>
         <p class="muted">업체 버튼을 누르면 해당 내역만 표시·선택됩니다. 여러 업체를 함께 누르거나 다시 눌러 해제하세요.</p>
         <div id="merchantGroups" class="bulk-tools"></div>
         <div class="review-filter-bar"><span id="reviewFilterStatus" role="status"></span><button id="clearReviewFilters" class="mini-btn" hidden>필터 해제 · 전체 보기</button></div>
         <div class="bulk-tools"><button id="selectUnclassified" class="mini-btn">미분류 모두 선택</button><select id="bulkCategory" aria-label="일괄 분류 업종"></select><button id="applyBulkCategory" class="mini-btn">선택 항목 일괄 분류</button></div>
-        <div class="bulk-history"><button id="undoBulkCategory" class="mini-btn" hidden>분류 실행취소</button><button id="reselectBulkCategory" class="mini-btn" hidden>이전 선택 다시 선택</button></div><div id="reviewTools"></div><div id="reviewPager" class="review-pager"></div><div id="reviewList" class="review-list"></div>
+        <div class="bulk-history"><button id="undoBulkCategory" class="mini-btn" hidden>분류 실행취소</button><button id="reselectBulkCategory" class="mini-btn" hidden>이전 선택 다시 선택</button></div><div id="reviewAttention" role="status"></div><div id="reviewTools"></div><div id="reviewPager" class="review-pager"></div><div id="reviewList" class="review-list"></div>
         <button id="saveReviewedBtn" class="full-btn">이대로 등록</button>
       </section>
 
@@ -141,10 +141,10 @@
 
   <div id="toast" class="toast"></div>
 
-  <script src="./excel-core.js?v=1.1.8"></script>
-  <script src="./app.js?v=1.1.8"></script>
-  <script src="./batch-core.js?v=1.1.8"></script><script src="./batch-ui.js?v=1.1.8"></script><script src="./excel-ui.js?v=1.1.8"></script>
-  <script src="./chart-callouts.js?v=1.1.8"></script><script src="./dashboard.js?v=1.1.8"></script>
-  <script src="./refresh.js?v=1.1.8"></script>
+  <script src="./excel-core.js?v=1.1.9"></script>
+  <script src="./app.js?v=1.1.9"></script>
+  <script src="./batch-core.js?v=1.1.9"></script><script src="./batch-ui.js?v=1.1.9"></script><script src="./excel-ui.js?v=1.1.9"></script>
+  <script src="./chart-callouts.js?v=1.1.9"></script><script src="./dashboard.js?v=1.1.9"></script>
+  <script src="./refresh.js?v=1.1.9"></script>
 </body>
 </html>

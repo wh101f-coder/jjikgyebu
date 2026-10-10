@@ -96,3 +96,11 @@ test('named 이용카드, spaced section subtotals, and installment rounds prese
  const data=[['현대카드'],['이용일','이용카드','이용가맹점','이용금액','할부/회차','예상적립/할인','결제원금','수수료(이자)'],['2026년 08월 04일','본인 가상 현대카드','가상카페','1,000','',99,'1,000',0],['-','','일 시 불 소계 1 건',0,'',0,1000,0],['2026년 02월 16일','본인 가상 현대카드','가상상점','240,000','24/7',0,'10,000','500'],['-','','할 부 소계 1 건',0,'',0,10000,500],['-','','총 합계 2 건',0,'',0,11000,500]];
  const r=E.parse(data,{...E.detect(data),issuer:'현대카드'});assert.deepEqual(r.errors,[]);assert.equal(r.txs.length,2);assert.equal(r.summaryRows,3);assert.equal(r.txs[0].cardProduct,'가상 현대카드');assert.equal(r.txs[0].discountKnown,false);assert.equal(r.txs[1].installments,24);assert.equal(r.txs[1].installmentRound,7);assert.equal(r.txs[1].fee,500);assert.equal(r.txs[1].amount,240000);assert.equal(r.txs[1].billedAmount,10000);
 });
+test('statement-only annual fees and confirmed billing discounts are normalised separately',()=>{
+ const r=parse([['이용일','가맹점명','이용금액','카드번호','결제원금'],['2026-03-01','연회비',0,'1234',10000],['2026-03-02','가상 청구할인',0,'1234',-1500]]);
+ assert.deepEqual(r.errors,[]);assert.equal(r.txs[0].amount,10000);assert.equal(r.txs[0].adjustmentKind,'annualFee');assert.equal(r.txs[1].amount,0);assert.equal(r.txs[1].discount,1500);assert.equal(r.txs[1].adjustmentKind,'statementDiscount');assert.equal(r.txs.reduce((s,t)=>s+t.amount-t.discount,0),8500);
+});
+test('statement fee and dedicated negative discount columns do not double-count fees or predicted rewards',()=>{
+ const r=parse([['이용일','가맹점명','이용금액','카드번호','예상적립/할인','결제원금','수수료(이자)'],['2026-03-01','연회비',0,'1234',0,0,10000],['2026-03-02','가상 청구할인 5%',0,'1234',-1500,0,0],['2026-03-03','가상상점',1000,'1234',100,1000,0]]);
+ assert.deepEqual(r.errors,[]);assert.equal(r.txs[0].amount,10000);assert.equal(r.txs[0].fee,0);assert.equal(r.txs[1].discount,1500);assert.equal(r.txs[1].billedAmount,-1500);assert.equal(r.txs[2].discount,0);assert.equal(r.txs[2].discountKnown,false);
+});

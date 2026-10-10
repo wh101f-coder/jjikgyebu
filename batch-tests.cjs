@@ -47,7 +47,7 @@ test('filter and sort preserve source indices and hidden rows',()=>{
 test('batch commit stores every month and sheet atomically in isolated memory',()=>{
  const fs=require('node:fs'),vm=require('node:vm'),src=fs.readFileSync(__dirname+'/excel-ui.js','utf8');
  const store=new Map(),messages=[];const pending=[1,2,3,4].map(m=>({id:'test'+m,date:`2025-0${m}-05`,merchant:'가상',amount:1000,discount:0,action:'new',importFileKey:'sheet'+m}));
- const context={state:{txs:[{id:'existing',date:'2024-01-01'}],pending,month:'2025-01'},excelSession:{ready:true,keys:['sheet1','sheet2','sheet3','sheet4']},validTransaction:()=>true,localStorage:{setItem:(k,v)=>store.set(k,v)},excelHistory:()=>[],toast:m=>messages.push(m),$:()=>({classList:{add(){}}}),render(){}};
+ const context={state:{txs:[{id:'existing',date:'2024-01-01'}],pending,month:'2025-01'},excelSession:{ready:true,keys:['sheet1','sheet2','sheet3','sheet4']},validTransaction:()=>true,reviewProblem:()=>'',localStorage:{setItem:(k,v)=>store.set(k,v)},excelHistory:()=>[],toast:m=>messages.push(m),$:()=>({classList:{add(){}}}),render(){}};
  vm.createContext(context);vm.runInContext(src.slice(src.indexOf('function commitExcel'),src.indexOf('function renderBilling')),context);vm.runInContext('commitExcel()',context);
  const saved=JSON.parse(store.get('jjig_txs'));assert.equal(saved.length,5);assert.deepEqual(saved.slice(1).map(t=>t.date.slice(0,7)),['2025-01','2025-02','2025-03','2025-04']);assert.equal(context.state.month,'2025-04');assert.equal(JSON.parse(store.get('jjig_excel_imports')).length,4);
  context.state.pending=pending;context.excelSession={ready:true,keys:[]};context.localStorage.setItem=()=>{throw Error('quota');};const before=context.state.txs;vm.runInContext('commitExcel()',context);assert.equal(context.state.txs,before);assert.equal(context.state.pending.length,4);
@@ -89,4 +89,23 @@ test('1904-workbook serials preserve use and due dates after raw decoding',()=>{
  const serial=(Date.UTC(2026,0,5)-Date.UTC(1899,11,30))/86400000-1462;
  const r=B.parseSheet({date1904:true,...sheet([['현대카드'],['이용일','가맹점명','이용금액','카드번호','결제일'],[serial,'가상',1000,'1234',serial+9]])});
  assert.deepEqual(r.errors,[]);assert.equal(r.txs[0].date,'2026-01-05');assert.equal(r.txs[0].dueDate,'2026-01-14');
+});
+test('monthly installment statements merge one purchase and preserve every billing amount',()=>{
+ const t={issuer:'현대카드',cardProduct:'가상카드',cardLast4:'',date:'2026-02-16',merchant:'가상마트',amount:240000,discount:0,installments:24,fee:500};
+ const groups=[7,1,8,2].map((round,i)=>[{...t,id:'i'+i,installmentRound:round,billingMonth:'2026-'+String(round+2).padStart(2,'0'),billedAmount:10000}]);
+ const r=B.reconcileSheets(groups,[]);assert.equal(r.length,1);assert.equal(r[0].amount,240000);assert.equal(r[0].action,'new');assert.equal(r[0].installmentStatements.length,4);assert.equal(r[0].installmentRound,8);
+ const saved=B.reconcileSheets([groups[2]],[{...groups[0][0],id:'saved'}]);assert.equal(saved.length,1);assert.equal(saved[0].action,'update');assert.equal(saved[0].matchId,'saved');assert.equal(saved[0].installmentStatements.length,2);
+ const repeated=B.reconcileSheets([groups[0], [{...groups[1][0],id:'a'},{...groups[1][0],id:'b'}]],[]);assert.equal(repeated.length,2);
+ const unrelated=B.reconcileSheets([groups[0],[{...groups[1][0],installmentRound:3}]],[]);assert.equal(unrelated.length,2);
+});
+test('blocked import opens problem items and writes no ledger data',()=>{
+ const fs=require('fs'),vm=require('vm'),src=fs.readFileSync(__dirname+'/excel-ui.js','utf8');let shown=0,writes=0;
+ const ctx=vm.createContext({state:{pending:[{action:'review'}]},excelSession:{ready:true},reviewProblem:t=>t.action==='review'?'duplicate':'',showReviewProblems:()=>shown++,localStorage:{setItem:()=>writes++}});
+ vm.runInContext(src.slice(src.indexOf('function commitExcel'),src.indexOf('function renderBilling')),ctx);vm.runInContext('commitExcel()',ctx);assert.equal(shown,1);assert.equal(writes,0);
+});
+test('billing histories preserve each month after a single installment purchase is stored',()=>{
+ const fs=require('fs'),vm=require('vm'),src=fs.readFileSync(__dirname+'/excel-ui.js','utf8');const node={};
+ const ctx=vm.createContext({state:{month:'2026-02',txs:[{sourceType:'excel',date:'2026-02-16',amount:240000,discount:0,cardId:'a',installmentStatements:[{billingMonth:'2026-03',billedAmount:10000,fee:500},{billingMonth:'2026-04',billedAmount:10000,fee:450}]}]},$:()=>node,cardLabel:()=> '가상카드',escapeHtml:s=>s,fmt:n=>n+'원'});
+ vm.runInContext(src.slice(src.indexOf('function renderBilling')),ctx);assert.ok(node.innerHTML.includes('10500원'));assert.ok(node.innerHTML.includes('1건'));
+ ctx.state.month='2026-03';vm.runInContext('renderBilling()',ctx);assert.ok(node.innerHTML.includes('10450원'));
 });

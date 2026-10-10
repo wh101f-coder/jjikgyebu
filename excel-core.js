@@ -7,7 +7,7 @@
     merchant:['이용가맹점(은행)명','이용가맹점명','가맹점명','이용하신곳','이용하신가맹점','사용처','가맹점','업체명','상호명','merchant'],
     amount:['이용금액(해외현지/체크카드)','이용금액','승인금액','사용금액','거래금액','이용금액(원)','승인금액(원)'],
     card:['이용카드','카드번호','카드번호(끝4자리)','카드끝자리'],
-    discount:['혜택금액','할인금액','청구할인금액','할인액'],
+    discount:['혜택금액','할인금액','청구할인금액','할인액'],estimatedBenefit:['예상적립/할인'],
     billed:['원금','결제원금','청구원금','청구금액','결제금액'],
     approval:['승인번호'],status:['매출구분','거래구분','이용구분','승인상태','상태'],
     installments:['할부개월','할부기간','할부/회차'],fee:['수수료','수수료(이자)'],due:['결제일','결제예정일'],issuer:['카드사','카드사명','발급사'],cancel:['취소금액','누적취소금액'],cardProduct:['카드상품명','이용카드명','카드명','이용카드'],foreign:['해외이용금액($)','외화금액','현지통화금액']
@@ -198,23 +198,30 @@
       const cardProduct=/[가-힣a-z]/i.test(productText)?productText.replace(/^(?:본인|가족)\s+/,''):'';
       if(!cardLast4&&!cardProduct){errors.push(`${i+1}행: 카드번호 또는 카드상품명을 확인해주세요`);continue;}
       const cancelled=/취소|환불/.test(status)||amountValue<0;
-      const amount=cancelled?-Math.abs(amountValue):amountValue;
+      let amount=cancelled?-Math.abs(amountValue):amountValue;
       let discount=money(read(r,'discount')),billedAmount=money(read(r,'billed'));
+      const sourceBilledAmount=billedAmount,sourceFee=money(read(r,'fee'))||0;
+      let adjustmentKind='';
+      if(amountValue===0&&/청구할인/.test(merchant)&&billedAmount<0){adjustmentKind='statementDiscount';discount=-billedAmount;}
+      const benefit=money(read(r,'estimatedBenefit'));
+      if(amountValue===0&&/청구할인/.test(merchant)&&billedAmount===0&&benefit<0){adjustmentKind='statementDiscount';discount=-benefit;billedAmount=benefit;}
+      if(amountValue===0&&/^연회비/.test(merchant)&&billedAmount>0){adjustmentKind='annualFee';amount=billedAmount;}
+      if(amountValue===0&&/^연회비/.test(merchant)&&billedAmount===0&&sourceFee>0){adjustmentKind='annualFee';amount=sourceFee;billedAmount=sourceFee;}
       const discountKnown=discount!==null;
       discount=discount??0;
       if(cancelled){discount=-Math.abs(discount);if(billedAmount!==null)billedAmount=-Math.abs(billedAmount);}
-      const fee=money(read(r,'fee'))||0;
+      const fee=adjustmentKind==='annualFee'&&sourceBilledAmount===0?0:sourceFee;
       const installmentText=compact(read(r,'installments')),pair=installmentText.match(/^(\d+)\/(\d+)$/);
       const installments=pair?Number(pair[1]):money(read(r,'installments'))||0;
       const installmentRound=pair?Number(pair[2]):null;
       if(pair&&(installments<2||installmentRound<1||installmentRound>installments)){errors.push(`${i+1}행: 할부개월·회차 확인 필요`);continue;}
-      if(Math.abs(discount)>Math.abs(amount)||(!cancelled&&discount<0))errors.push(`${i+1}행: 할인금액이 이용금액과 맞지 않습니다`);
+      if(adjustmentKind!=='statementDiscount'&&(Math.abs(discount)>Math.abs(amount)||(!cancelled&&discount<0)))errors.push(`${i+1}행: 할인금액이 이용금액과 맞지 않습니다`);
       if(discountKnown&&billedAmount!==null&&installments<=1&&amount-discount+(billedIncludesFee?fee:0)!==billedAmount)errors.push(`${i+1}행: 이용금액·혜택금액과 청구금액이 다릅니다. 열 선택을 확인해주세요`);
       let dueDate= date(read(r,'due'),year,options.date1904);
       if(!dueDate&&billingMonth)dueDate=billingMonth+'-14';
       const rowIssuer=options.resolveIssuer?options.resolveIssuer(read(r,'issuer'),read(r,'card')+' '+cardProduct,cardLast4):issuer;
       if(!rowIssuer){errors.push(`${i+1}행: 카드사를 확인해주세요`);continue;}
-      const t={date:day,merchant,amount,discount,discountKnown,billedAmount,billedIncludesFee,fee,installments,installmentRound,issuer:rowIssuer,cardLast4,cardProduct,
+      const t={date:day,merchant,amount,discount,discountKnown,billedAmount,billedIncludesFee,fee,installments,installmentRound,adjustmentKind,sourceAmount:amountValue,sourceBilledAmount,sourceFee,issuer:rowIssuer,cardLast4,cardProduct,
         cardId:rowIssuer+':'+(cardLast4||'상품:'+compact(cardProduct)),card:cardProduct||rowIssuer+' '+cardLast4,approvalNumber:String(read(r,'approval')??'').trim(),
         status:cancelled?'취소':'이용',sourceType:'excel',sourceName:fileName,sourceSheet:sheetName,sourceRow:i+1,
         dueDate,dueConfirmed:!!dueDate};

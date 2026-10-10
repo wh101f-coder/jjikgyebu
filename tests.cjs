@@ -102,3 +102,11 @@ test('bulk classification clears filters and protects unrelated rows; undo resto
  assert.equal(run("bulkReview.names.has('테스트업체A')"),true);
  run('state.pending=[];syncBulkReview()');assert.equal(run('bulkReview.last.length'),0);assert.equal(run('bulkReview.undo'),null);
 });
+test('review gives specific reasons and accepts only explicitly validated zero-amount statement discounts',()=>{
+ assert.match(run("reviewProblem({amount:0,discount:0})"),/0원/);
+ assert.match(run("reviewProblem({amount:1000,discount:2000})"),/보다 커/);
+ assert.match(run("reviewProblem({amount:1000,discount:0,action:'review'})"),/중복/);
+ assert.equal(run("validTransaction({sourceType:'excel',adjustmentKind:'statementDiscount',amount:0,discount:1500,billedAmount:-1500})"),true);
+ assert.equal(run("validTransaction({amount:0,discount:1500})"),false);
+ assert.equal(run("reviewProblem({action:'skip',amount:0})"),'');
+});

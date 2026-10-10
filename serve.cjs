@@ -1,6 +1,11 @@
 const http=require('node:http'),fs=require('node:fs'),path=require('node:path');
 const root=__dirname;
 http.createServer((req,res)=>{
+ if(req.url==='/attention-test'){
+ const html=fs.readFileSync(path.join(root,'index.html'),'utf8');
+ const fixture='<script>state.pending=Array.from({length:14},(_,i)=>({id:"attention-"+i,date:"2026-10-01",merchant:"가상업체"+i,amount:i===13?0:1000,discount:0,sourceType:"excel",issuer:"가상카드",cardLast4:"1234",category:"미분류",action:i===12?"review":"new",matchId:i===12?"old":null}));state.importMode="excel";excelSession={ready:true,keys:[]};renderReview();document.querySelector("#reviewPanel").classList.remove("hidden");switchTab("import");</script>';
+ res.setHeader('Content-Type','text/html; charset=utf-8');return res.end(html.replace('</body>',fixture+'</body>'));
+ }
  if(req.url==='/adaptive-test'||req.url==='/adaptive-error-test'){
   const html=fs.readFileSync(path.join(root,'index.html'),'utf8');
   const units=[{fileName:'synthetic-hyundai.xls',name:'가상내역',rows:[['이용일','업체명','이용금액'],['2026-01-05','가상카페','1,250.00'],['2026-02-05','가상식당','2,500원'],['카드번호','','****0322'],['카드사: 현대카드']],options:{}}];

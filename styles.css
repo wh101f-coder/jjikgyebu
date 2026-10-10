@@ -160,3 +160,4 @@ html{overscroll-behavior-y:contain}button.app-version{border:0;padding:4px 2px;b
 #compareMonthGrid{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:5px}
 #compareMonthGrid button{min-height:42px;min-width:0;border:0;border-radius:12px;background:white;color:#736581;font:inherit;font-size:13px;padding:4px}
 #compareMonthGrid button[aria-pressed=true]{background:#a48bc4;color:white;font-weight:700}
+.review-attention{background:#fff6f0;border:1px solid #f1d9cb;border-radius:16px;padding:14px;margin:14px 0}.review-attention p,.review-warning{font-size:12px;line-height:1.6;color:#9b624c}.review-warning{background:#fff6f0;border-radius:10px;padding:9px}.review-item[open]{border-color:#c2a9d7}

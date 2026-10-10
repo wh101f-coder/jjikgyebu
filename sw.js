@@ -1,5 +1,5 @@
-const CACHE='jjig-ledger-v1.1.8';
-const APP=['./','./index.html','./styles.css?v=1.1.8','./app.js?v=1.1.8','./dashboard.js?v=1.1.8','./chart-callouts.js?v=1.1.8','./excel-core.js?v=1.1.8','./excel-ui.js?v=1.1.8','./batch-core.js?v=1.1.8','./batch-ui.js?v=1.1.8','./refresh.js?v=1.1.8','./manifest.webmanifest','./icons/icon-192.png','./icons/icon-512.png','./icons/icon-180.png'];
+const CACHE='jjig-ledger-v1.1.9';
+const APP=['./','./index.html','./styles.css?v=1.1.9','./app.js?v=1.1.9','./dashboard.js?v=1.1.9','./chart-callouts.js?v=1.1.9','./excel-core.js?v=1.1.9','./excel-ui.js?v=1.1.9','./batch-core.js?v=1.1.9','./batch-ui.js?v=1.1.9','./refresh.js?v=1.1.9','./manifest.webmanifest','./icons/icon-192.png','./icons/icon-512.png','./icons/icon-180.png'];
 self.addEventListener('install',e=>e.waitUntil(caches.open(CACHE).then(c=>c.addAll(APP.map(url=>new Request(url,{cache:'reload'})))).then(()=>self.skipWaiting())));
 self.addEventListener('activate',e=>e.waitUntil(caches.keys().then(keys=>Promise.all(keys.filter(k=>k.startsWith('jjig-ledger-') && k!==CACHE).map(k=>caches.delete(k)))).then(()=>self.clients.claim())));
 self.addEventListener('fetch',e=>{
