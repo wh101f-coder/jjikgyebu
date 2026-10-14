@@ -111,61 +111,45 @@ function Delete-Ctrl-Safe($hwp, $ctrl) {
     return $false
 }
 
-function Delete-Template-Endnotes-ByPattern($hwp, [int]$templateBaseline) {
-    # Observed HWP paste order when source problem carries an endnote:
-    # T1,S1,T2,S2,...,Tk,Sk,T(k+1)...Tn
-    # where T=template blank endnote, S=source answer endnote.
-    # Delete from the END so indexes never shift underneath us.
-    $ctrls = @(Get-EndnoteControls $hwp)
-    $total = $ctrls.Count
-    $sourceAdded = $total - $templateBaseline
+function Delete-Template-Endnotes-AlternatingPrefix($hwp, [int]$pastedProblemCount, [int]$templateBaseline) {
+    # After pasting k answer-bearing problems the observed order is:
+    # T1,S1,T2,S2,...,Tk,Sk,T(k+1),T(k+2)...
+    # Only T1..Tk must be removed. T(k+1)+ must stay.
+    # Delete target indexes from HIGH to LOW so earlier indexes never shift.
+    $before = Count-Endnotes $hwp
+    $sourceAdded = $before - $templateBaseline
     if ($sourceAdded -lt 0) { $sourceAdded = 0 }
 
-    Write-Host ("Cleanup pattern: templateBaseline=" + $templateBaseline + " / total=" + $total + " / sourceAdded=" + $sourceAdded) -ForegroundColor DarkGray
-
-    $deleteIdx = New-Object System.Collections.ArrayList
-
-    # Any controls after the alternating prefix are untouched template blanks.
-    $prefixLen = 2 * $sourceAdded
-    for ($i = $total - 1; $i -ge $prefixLen; $i--) {
-        [void]$deleteIdx.Add($i)
-    }
-
-    # In the alternating prefix, template blanks are 0,2,4,... (0-based).
-    for ($i = $prefixLen - 2; $i -ge 0; $i -= 2) {
-        [void]$deleteIdx.Add($i)
-    }
+    $k = [Math]::Min($pastedProblemCount, $sourceAdded)
+    Write-Host ("Alternating cleanup: pasted=" + $pastedProblemCount + " / sourceAdded=" + $sourceAdded + " / deleteTemplateCount=" + $k) -ForegroundColor DarkGray
 
     $removed = 0
-    foreach ($idx in $deleteIdx) {
-        if ($idx -ge 0 -and $idx -lt $ctrls.Count) {
-            if (Delete-Ctrl-Safe $hwp $ctrls[$idx]) { $removed++ }
+    for ($q = $k; $q -ge 1; $q--) {
+        # zero-based Tq index in T1,S1,T2,S2,... is 2*(q-1)
+        $targetIndex = 2 * ($q - 1)
+
+        # Re-enumerate after every deletion. Because we are deleting from the end,
+        # all earlier target indexes remain valid.
+        $ctrls = @(Get-EndnoteControls $hwp)
+        if ($targetIndex -lt 0 -or $targetIndex -ge $ctrls.Count) {
+            Write-Host ("Skip invalid target index: " + $targetIndex + " / current=" + $ctrls.Count) -ForegroundColor Yellow
+            continue
+        }
+
+        if (Delete-Ctrl-Safe $hwp $ctrls[$targetIndex]) {
+            $removed++
+            Write-Host ("Deleted T" + $q + " at endnote index " + $targetIndex) -ForegroundColor DarkGray
+        } else {
+            Write-Host ("Failed deleting T" + $q + " at index " + $targetIndex) -ForegroundColor Yellow
         }
     }
 
     return [pscustomobject]@{
         Removed=$removed
         SourceAdded=$sourceAdded
-        Before=$total
+        Before=$before
         After=(Count-Endnotes $hwp)
     }
-}
-
-function Trim-Copied-Endnotes-NoAnswer($hwp, [int]$templateBaseline) {
-    # NO-ANSWER mode: normally no source endnote should be copied.
-    # If any are copied, they are interleaved after template entries for the pasted problems.
-    # Remove only the extras from the end, one by one, until the baseline is restored.
-    $removed = 0
-    $guard = 0
-    while ((Count-Endnotes $hwp) -gt $templateBaseline -and $guard -lt 500) {
-        $ctrls = @(Get-EndnoteControls $hwp)
-        if ($ctrls.Count -le 0) { break }
-        $last = $ctrls[$ctrls.Count - 1]
-        if (-not (Delete-Ctrl-Safe $hwp $last)) { break }
-        $removed++
-        $guard++
-    }
-    return $removed
 }
 
 function Detect-SourceAnswers($hwp, [string]$path) {
@@ -216,8 +200,8 @@ function Detect-SourceAnswers($hwp, [string]$path) {
 }
 
 Write-Host ""
-Write-Host "HWP exam-layout native copy test V3.8" -ForegroundColor Green
-Write-Host "V3.8 fixes endnote deletion by using the observed alternating order and deleting indexes from the end."
+Write-Host "HWP exam-layout native copy test V3.9" -ForegroundColor Green
+Write-Host "V3.9 removes only T1..Tk from T1,S1,T2,S2,... and leaves T(k+1)+ untouched."
 Write-Host ""
 
 $here = Split-Path -Parent $MyInvocation.MyCommand.Path
@@ -270,7 +254,8 @@ for ($i = 0; $i -lt 4; $i++) {
 
 Write-Host ""
 Write-Host "Step B: select source problems 1 to 4 one at a time." -ForegroundColor Green
-for ($q = 1; $q -le 4; $q++) {
+$pastedProblemCount = 4
+for ($q = 1; $q -le $pastedProblemCount; $q++) {
     Pause-Step ("In the SOURCE HWP window, select only problem " + $q + " content as one block.")
     $src.Run("Copy")
     Paste-AtMarker $dst $markers[$q - 1]
@@ -280,15 +265,13 @@ for ($q = 1; $q -le 4; $q++) {
 foreach ($m in $markers) { AllReplace-Plain $dst $m "" }
 
 if ($detect.HasAnswers) {
-    $cleanup = Delete-Template-Endnotes-ByPattern $dst $templateEndnotes
-    Write-Host ("Template blank endnotes removed: " + $cleanup.Removed) -ForegroundColor Green
-    Write-Host ("Source answer endnotes detected from paste: " + $cleanup.SourceAdded) -ForegroundColor Green
+    $cleanup = Delete-Template-Endnotes-AlternatingPrefix $dst $pastedProblemCount $templateEndnotes
+    Write-Host ("Template blanks removed: " + $cleanup.Removed) -ForegroundColor Green
+    Write-Host ("Source answer endnotes added: " + $cleanup.SourceAdded) -ForegroundColor Green
     Write-Host ("Endnotes before=" + $cleanup.Before + " / after=" + $cleanup.After) -ForegroundColor DarkGray
-    Write-Host "Expected quick answers for this 4-problem test: four entries only, in source problem order." -ForegroundColor Green
+    Write-Host "Expected for this test: S1,S2,S3,S4,T5,T6,T7... remain." -ForegroundColor Green
 } else {
-    $removed = Trim-Copied-Endnotes-NoAnswer $dst $templateEndnotes
-    Write-Host ("NO-ANSWER cleanup removed copied extras: " + $removed) -ForegroundColor DarkGray
-    Write-Host ("Final endnotes=" + (Count-Endnotes $dst) + " / template baseline=" + $templateEndnotes) -ForegroundColor Green
+    Write-Host "NO-ANSWER mode: no template endnote cleanup. T1,T2,T3... remain." -ForegroundColor Green
 }
 
 try { [void]$dst.SaveAs($outPath, "HWP", "") } catch { try { $dst.Run("FileSave") } catch {} }
