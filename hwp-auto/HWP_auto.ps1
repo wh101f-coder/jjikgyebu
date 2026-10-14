@@ -82,56 +82,39 @@ function AllReplace-Plain($hwp, [string]$find, [string]$replace) {
     } catch {}
 }
 
+function Get-EndnoteControls($hwp) {
+    $arr = New-Object System.Collections.ArrayList
+    $ctrl = $hwp.HeadCtrl
+    while ($null -ne $ctrl) {
+        try {
+            if ($ctrl.CtrlID -eq "en") { [void]$arr.Add($ctrl) }
+        } catch {}
+        try { $ctrl = $ctrl.Next } catch { break }
+    }
+    return ,$arr.ToArray()
+}
+
 function Count-Endnotes($hwp) {
-    $n = 0
-    $ctrl = $hwp.HeadCtrl
-    while ($null -ne $ctrl) {
-        try { if ($ctrl.CtrlID -eq "en") { $n++ } } catch {}
-        try { $ctrl = $ctrl.Next } catch { break }
-    }
-    return $n
+    return @(Get-EndnoteControls $hwp).Count
 }
 
-function Delete-One-Endnote($hwp) {
-    $ctrl = $hwp.HeadCtrl
-    while ($null -ne $ctrl) {
-        $isEn = $false
-        try { $isEn = ($ctrl.CtrlID -eq "en") } catch {}
-        if ($isEn) {
-            try {
-                $ok = $hwp.DeleteCtrl($ctrl)
-                if ($ok) { return $true }
-            } catch {}
-            try {
-                $hwp.SetPosBySet($ctrl.GetAnchorPos(0))
-                $hwp.Run("NoteModify")
-                $hwp.Run("Delete")
-                return $true
-            } catch { return $false }
-        }
-        try { $ctrl = $ctrl.Next } catch { break }
-    }
-    return $false
-}
-
-function Remove-All-Endnotes($hwp) {
+function Delete-SavedControls-Reverse($hwp, $controls) {
     $removed = 0
-    $guard = 0
-    while ((Count-Endnotes $hwp) -gt 0 -and $guard -lt 500) {
-        if (-not (Delete-One-Endnote $hwp)) { break }
-        $removed++
-        $guard++
-    }
-    return $removed
-}
-
-function Trim-Endnotes-ToCount($hwp, [int]$target) {
-    $removed = 0
-    $guard = 0
-    while ((Count-Endnotes $hwp) -gt $target -and $guard -lt 500) {
-        if (-not (Delete-One-Endnote $hwp)) { break }
-        $removed++
-        $guard++
+    if ($null -eq $controls) { return 0 }
+    for ($i = $controls.Count - 1; $i -ge 0; $i--) {
+        $ctrl = $controls[$i]
+        try {
+            if ($hwp.DeleteCtrl($ctrl)) {
+                $removed++
+                continue
+            }
+        } catch {}
+        try {
+            $hwp.SetPosBySet($ctrl.GetAnchorPos(0))
+            $hwp.Run("NoteModify")
+            $hwp.Run("Delete")
+            $removed++
+        } catch {}
     }
     return $removed
 }
@@ -149,7 +132,6 @@ function Detect-SourceAnswers($hwp, [string]$path) {
     $lines = @()
     if ($txt) { $lines = $txt -split "`r?`n" }
 
-    # Strong signal 1: quick-answer area after the last 'answer' heading contains non-empty numbered entries.
     if ($txt) {
         $idx = $txt.LastIndexOf($answerHeader)
         if ($idx -ge 0) {
@@ -163,7 +145,6 @@ function Detect-SourceAnswers($hwp, [string]$path) {
         }
     }
 
-    # Strong signal 2: exported text contains answer-only circled-choice lines. Endnote answers usually appear this way.
     $circled = @()
     for ($c = 0x2460; $c -le 0x2464; $c++) { $circled += ([char]$c).ToString() }
     $singleChoiceHits = 0
@@ -175,10 +156,9 @@ function Detect-SourceAnswers($hwp, [string]$path) {
         return [pscustomobject]@{ HasAnswers=$true; Endnotes=$endnoteCount; Evidence=("circled-answer-lines:" + $singleChoiceHits) }
     }
 
-    # Secondary signal: explicit filename wording, only when endnotes actually exist.
     $base = [System.IO.Path]::GetFileNameWithoutExtension($path)
-    $hasWord = U @(0xB2F5,0xC788,0xC74C)   # answer-present
-    $noWord  = U @(0xB2F5,0xC5C6,0xC74C)   # answer-absent
+    $hasWord = U @(0xB2F5,0xC788,0xC74C)
+    $noWord  = U @(0xB2F5,0xC5C6,0xC74C)
     if ($base.Contains($hasWord) -and -not $base.Contains($noWord)) {
         return [pscustomobject]@{ HasAnswers=$true; Endnotes=$endnoteCount; Evidence="filename" }
     }
@@ -187,8 +167,9 @@ function Detect-SourceAnswers($hwp, [string]$path) {
 }
 
 Write-Host ""
-Write-Host "HWP exam-layout native copy test V3.6" -ForegroundColor Green
-Write-Host "V3.6 detects answer/no-answer before paste and branches endnote handling."
+Write-Host "HWP exam-layout native copy test V3.7" -ForegroundColor Green
+Write-Host "V3.7 keeps template endnotes during paste, then removes the ORIGINAL template endnote controls in reverse order."
+Write-Host "This prevents index shifting from deleting the wrong notes."
 Write-Host ""
 
 $here = Split-Path -Parent $MyInvocation.MyCommand.Path
@@ -225,15 +206,15 @@ Try-RegisterSecurityModule $dst
 [void]$dst.Open($outPath, "HWP", "")
 try { $dst.XHwpWindows.Item(0).Visible = $true } catch {}
 
-$templateEndnotes = Count-Endnotes $dst
-Write-Host ("Template endnotes before processing: " + $templateEndnotes) -ForegroundColor DarkGray
+# Snapshot the ORIGINAL template endnote controls before any paste.
+$templateEndnoteCtrls = @(Get-EndnoteControls $dst)
+$templateEndnotes = $templateEndnoteCtrls.Count
+Write-Host ("Template endnotes snapshot: " + $templateEndnotes) -ForegroundColor DarkGray
 
 if ($detect.HasAnswers) {
-    $removed = Remove-All-Endnotes $dst
-    Write-Host ("ANSWER-PRESENT mode: removed template blank endnotes: " + $removed) -ForegroundColor Green
-    $templateEndnotes = 0
+    Write-Host "ANSWER-PRESENT mode: keep template notes temporarily; after paste, delete only the saved ORIGINAL template notes in reverse order." -ForegroundColor Green
 } else {
-    Write-Host "NO-ANSWER mode: keeping template blank endnotes." -ForegroundColor Green
+    Write-Host "NO-ANSWER mode: keep template blank endnotes." -ForegroundColor Green
 }
 
 Write-Host ""
@@ -253,23 +234,21 @@ for ($q = 1; $q -le 4; $q++) {
     Pause-Step ("In the SOURCE HWP window, select only problem " + $q + " content as one block.")
     $src.Run("Copy")
     Paste-AtMarker $dst $markers[$q - 1]
-
-    if (-not $detect.HasAnswers) {
-        $extraRemoved = Trim-Endnotes-ToCount $dst $templateEndnotes
-        if ($extraRemoved -gt 0) { Write-Host ("Removed copied source endnotes: " + $extraRemoved) -ForegroundColor DarkGray }
-    }
-
-    Write-Host ("Problem " + $q + " pasted.") -ForegroundColor Green
+    Write-Host ("Problem " + $q + " pasted. Endnotes now=" + (Count-Endnotes $dst)) -ForegroundColor Green
 }
 
 foreach ($m in $markers) { AllReplace-Plain $dst $m "" }
 
-$finalEndnotes = Count-Endnotes $dst
-Write-Host ("Final endnotes: " + $finalEndnotes) -ForegroundColor DarkGray
 if ($detect.HasAnswers) {
-    Write-Host "Expected behavior: source answer endnotes remain; template blank endnotes were removed." -ForegroundColor Green
+    $beforeDelete = Count-Endnotes $dst
+    $removed = Delete-SavedControls-Reverse $dst $templateEndnoteCtrls
+    $afterDelete = Count-Endnotes $dst
+    Write-Host ("Template endnotes removed in reverse by saved control identity: " + $removed) -ForegroundColor Green
+    Write-Host ("Endnotes before=" + $beforeDelete + " / after=" + $afterDelete) -ForegroundColor DarkGray
+    Write-Host "Expected: only source answer endnotes remain, preserving 1-2-3-4 answer order." -ForegroundColor Green
 } else {
-    Write-Host "Expected behavior: template blank endnotes remain; copied source endnotes are removed." -ForegroundColor Green
+    Write-Host ("Final endnotes=" + (Count-Endnotes $dst) + " / template baseline=" + $templateEndnotes) -ForegroundColor DarkGray
+    Write-Host "Expected: template blank quick-answer notes remain." -ForegroundColor Green
 }
 
 try { [void]$dst.SaveAs($outPath, "HWP", "") } catch { try { $dst.Run("FileSave") } catch {} }
