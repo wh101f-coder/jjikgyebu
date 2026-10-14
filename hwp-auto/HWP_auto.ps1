@@ -97,57 +97,77 @@ function Count-Endnotes($hwp) {
 }
 
 function Goto-Next-Endnote($hwp) {
+    # Exact Automation equivalent of:
+    # Alt+G -> Typesetting mark -> Endnote -> Go
+    # Hancom forum example uses DialogResult=32 and SetSelectionIndex=5 for endnotes.
     try {
         $ps = $hwp.HParameterSet.HGotoE
         $hwp.HAction.GetDefault("Goto", $ps.HSet)
-        $ps.HSet.SetItem("DialogResult", 32)   # 32 = endnote
-        $ps.SetSelectionIndex = 5              # typesetting mark
+        $ps.HSet.SetItem("DialogResult", 32)
+        $ps.SetSelectionIndex = 5
         return [bool]$hwp.HAction.Execute("Goto", $ps.HSet)
     } catch {
         return $false
     }
 }
 
-function Remove-Template-Endnotes-ManualFlow($hwp, [int]$count) {
-    # Mirrors the user's proven manual sequence:
-    # Ctrl+PageUp -> Goto Endnote -> Delete -> confirm ->
-    # Goto Endnote -> MoveRight (skip source answer) -> repeat.
-    # This avoids relying on Ctrl object identity or shifting indexes.
+function Forward-Delete-Endnote-WithConfirm($hwp) {
+    # IMPORTANT: this is the forward Delete key, NOT Backspace/DeleteBack.
+    # 0x00010001 automatically chooses the affirmative/default confirmation.
+    $oldMode = 0
+    try {
+        $oldMode = $hwp.SetMessageBoxMode(0x00010001)
+    } catch {}
+    try {
+        return [bool]$hwp.HAction.Run("Delete")
+    } finally {
+        try { [void]$hwp.SetMessageBoxMode($oldMode) } catch { try { [void]$hwp.SetMessageBoxMode(0x00000000) } catch {} }
+    }
+}
 
-    try { $hwp.Run("MoveTopLevelBegin") } catch { try { $hwp.Run("MoveDocBegin") } catch {} }
+function Remove-Template-Endnotes-ManualFlow($hwp, [int]$count) {
+    # Exact manual sequence supplied by the user:
+    # Ctrl+PgUp -> Alt+G / typesetting mark / endnote / Go -> forward Delete -> Enter
+    # -> Alt+G / endnote / Go -> RightArrow (skip S1)
+    # -> Alt+G / endnote / Go -> forward Delete -> Enter ...
+    #
+    # Automation equivalent:
+    # MoveTopLevelBegin -> Goto(DialogResult=32, SetSelectionIndex=5)
+    # -> HAction.Run("Delete") -> Goto(...) -> MoveRight -> repeat.
+
+    try { $hwp.HAction.Run("MoveTopLevelBegin") } catch { try { $hwp.HAction.Run("MoveDocBegin") } catch {} }
 
     $removed = 0
     $skipped = 0
 
     for ($i = 1; $i -le $count; $i++) {
+        # T_i: template blank endnote -> delete with FORWARD Delete
         if (-not (Goto-Next-Endnote $hwp)) {
-            Write-Host ("Could not goto template endnote T" + $i) -ForegroundColor Yellow
+            Write-Host ("Could not goto T" + $i) -ForegroundColor Yellow
             break
         }
 
-        try {
-            # YES/first button for the delete confirmation dialog.
-            $hwp.SetMessageBoxMode(0x00010000)
-            $hwp.Run("Delete")
+        if (Forward-Delete-Endnote-WithConfirm $hwp) {
             $removed++
-            Write-Host ("Deleted template endnote T" + $i) -ForegroundColor DarkGray
-        } catch {
-            Write-Host ("Delete failed at template endnote T" + $i) -ForegroundColor Yellow
-        } finally {
-            try { $hwp.SetMessageBoxMode(0x00000000) } catch {}
-        }
-
-        # Skip exactly one source answer endnote S_i.
-        if (-not (Goto-Next-Endnote $hwp)) {
-            Write-Host ("Could not goto source endnote S" + $i) -ForegroundColor Yellow
+            Write-Host ("Deleted T" + $i + " with forward Delete") -ForegroundColor DarkGray
+        } else {
+            Write-Host ("Forward Delete failed at T" + $i) -ForegroundColor Yellow
             break
         }
+
+        # S_i: source answer endnote -> keep it, move cursor to its right
+        if (-not (Goto-Next-Endnote $hwp)) {
+            Write-Host ("Could not goto S" + $i) -ForegroundColor Yellow
+            break
+        }
+
         try {
-            $hwp.Run("MoveRight")
+            $hwp.HAction.Run("MoveRight")
             $skipped++
-            Write-Host ("Skipped source endnote S" + $i) -ForegroundColor DarkGray
+            Write-Host ("Kept S" + $i + " and moved right") -ForegroundColor DarkGray
         } catch {
-            Write-Host ("MoveRight failed after source endnote S" + $i) -ForegroundColor Yellow
+            Write-Host ("MoveRight failed at S" + $i) -ForegroundColor Yellow
+            break
         }
     }
 
@@ -201,8 +221,8 @@ function Detect-SourceAnswers($hwp, [string]$path) {
 }
 
 Write-Host ""
-Write-Host "HWP exam-layout native copy test V4.0" -ForegroundColor Green
-Write-Host "V4.0 removes template endnotes by reproducing the manual Goto-Endnote/Delete/Skip sequence." 
+Write-Host "HWP exam-layout native copy test V4.1" -ForegroundColor Green
+Write-Host "V4.1 uses the exact HWP Goto-Endnote action and FORWARD Delete, not Backspace." 
 Write-Host ""
 
 $here = Split-Path -Parent $MyInvocation.MyCommand.Path
@@ -266,10 +286,10 @@ for ($q = 1; $q -le $pastedProblemCount; $q++) {
 foreach ($m in $markers) { AllReplace-Plain $dst $m "" }
 
 if ($detect.HasAnswers) {
-    Write-Host "Starting manual-style alternating endnote cleanup..." -ForegroundColor Green
+    Write-Host "Starting exact manual-flow endnote cleanup..." -ForegroundColor Green
     $cleanup = Remove-Template-Endnotes-ManualFlow $dst $pastedProblemCount
-    Write-Host ("Deleted template notes=" + $cleanup.Removed + " / skipped source notes=" + $cleanup.Skipped + " / remaining=" + $cleanup.Remaining) -ForegroundColor Green
-    Write-Host "Expected quick answers: S1,S2,S3,S4 followed by untouched template blanks T5,T6..." -ForegroundColor Green
+    Write-Host ("Deleted T notes=" + $cleanup.Removed + " / kept S notes=" + $cleanup.Skipped + " / remaining=" + $cleanup.Remaining) -ForegroundColor Green
+    Write-Host "Expected quick answers: source answers S1,S2,S3,S4, then untouched template blanks T5,T6..." -ForegroundColor Green
 } else {
     Write-Host "NO-ANSWER mode: template blank endnotes remain untouched." -ForegroundColor Green
 }
