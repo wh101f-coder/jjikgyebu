@@ -1,5 +1,7 @@
-# HWP AUTO UPDATE WRAPPER V1.8
-# Runtime-patches the known-good V1.7 copy engine with stronger choice-tab normalization.
+# HWP AUTO UPDATE WRAPPER V1.9
+# Runtime-patches the known-good V1.7 copy engine.
+# V1.9 stops guessing spacing by the number of Tab characters.
+# Instead, option gaps are reduced to ONE tab and the copied question gets fixed tab stops.
 # This keeps the stable cursor-first / block-first / reverse-paste workflow unchanged.
 
 $ErrorActionPreference = 'Stop'
@@ -28,9 +30,8 @@ function Normalize-ChoiceTabs($hwp, [int]$q) {
 
     $new = @'
 function Normalize-ChoiceTabs($hwp, [int]$q) {
-    # V1.8: source exams do not store every visual gap as exactly 3 adjacent tabs.
-    # Some use 4-8 tabs, or tabs separated by one/two spaces.
-    # Only the temporary one-question document is changed; SOURCE stays untouched.
+    # V1.9: normalize by TAB STOPS, not by counting Tabs.
+    # SOURCE remains untouched; this runs only on the temporary one-question copy.
     try {
         $txt = ''
         try { $txt = [string]$hwp.GetTextFile('TEXT', '') } catch {}
@@ -39,32 +40,50 @@ function Normalize-ChoiceTabs($hwp, [int]$q) {
             if ($txt.IndexOf([char]$code) -ge 0) { $hasChoice = $true; break }
         }
         if (-not $hasChoice) {
-            Log ('Q' + $q + ': no circled choice marker; tab normalization skipped.')
+            Log ('Q' + $q + ': no circled choice marker; option alignment skipped.')
             return
         }
 
-        # Collapse any long contiguous tab run to exactly two tabs.
-        $null = All-Replace $hwp '^t^t^t^t^t^t^t^t' '^t^t'
-        $null = All-Replace $hwp '^t^t^t^t^t^t^t' '^t^t'
-        $null = All-Replace $hwp '^t^t^t^t^t^t' '^t^t'
-        $null = All-Replace $hwp '^t^t^t^t^t' '^t^t'
-        $null = All-Replace $hwp '^t^t^t^t' '^t^t'
-        $null = All-Replace $hwp '^t^t^t' '^t^t'
+        # First collapse source-specific wide gaps to a single real Tab.
+        # Do longest patterns first so all common 2-8 tab runs end as one tab.
+        $null = All-Replace $hwp '^t^t^t^t^t^t^t^t' '^t'
+        $null = All-Replace $hwp '^t^t^t^t^t^t^t' '^t'
+        $null = All-Replace $hwp '^t^t^t^t^t^t' '^t'
+        $null = All-Replace $hwp '^t^t^t^t^t' '^t'
+        $null = All-Replace $hwp '^t^t^t^t' '^t'
+        $null = All-Replace $hwp '^t^t^t' '^t'
+        $null = All-Replace $hwp '^t^t' '^t'
 
-        # Also normalize common visually-identical gaps where spaces sit between tabs.
-        $null = All-Replace $hwp '^t ^t^t' '^t^t'
-        $null = All-Replace $hwp '^t^t ^t' '^t^t'
-        $null = All-Replace $hwp '^t ^t ^t' '^t^t'
-        $null = All-Replace $hwp '^t  ^t^t' '^t^t'
-        $null = All-Replace $hwp '^t^t  ^t' '^t^t'
-        $null = All-Replace $hwp '^t  ^t  ^t' '^t^t'
+        # Common mixed gaps: tabs separated by one/two spaces.
+        $null = All-Replace $hwp '^t ^t^t' '^t'
+        $null = All-Replace $hwp '^t^t ^t' '^t'
+        $null = All-Replace $hwp '^t ^t ^t' '^t'
+        $null = All-Replace $hwp '^t  ^t^t' '^t'
+        $null = All-Replace $hwp '^t^t  ^t' '^t'
+        $null = All-Replace $hwp '^t  ^t  ^t' '^t'
+        $null = All-Replace $hwp '^t ^t' '^t'
+        $null = All-Replace $hwp '^t  ^t' '^t'
 
-        # One extra pass catches runs created after mixed-gap cleanup.
-        $null = All-Replace $hwp '^t^t^t^t' '^t^t'
-        $null = All-Replace $hwp '^t^t^t' '^t^t'
-        Log ('Q' + $q + ': V1.8 choice-gap normalization applied.')
+        # Give every paragraph in this temporary question two fixed left tab stops.
+        # With one Tab between choices, ① stays at the line start, ② goes to ~28 mm,
+        # ③ goes to ~56 mm. The second line naturally becomes ④ / ⑤ on the same grid.
+        $null = $hwp.HAction.Run('SelectAll')
+        $set = $hwp.HParameterSet.HParaShape
+        $hwp.HAction.GetDefault('ParagraphShape', $set.HSet)
+        $tabDef = $set.TabDef
+        $tabDef.CreateItemArray('TabItem', 6)
+        $tabDef.TabItem.SetItem(0, $hwp.MiliToHwpUnit(28.0))
+        $tabDef.TabItem.SetItem(1, 0)
+        $tabDef.TabItem.SetItem(2, 0)
+        $tabDef.TabItem.SetItem(3, $hwp.MiliToHwpUnit(56.0))
+        $tabDef.TabItem.SetItem(4, 0)
+        $tabDef.TabItem.SetItem(5, 0)
+        $null = $hwp.HAction.Execute('ParagraphShape', $set.HSet)
+        try { $null = $hwp.HAction.Run('Cancel') } catch {}
+
+        Log ('Q' + $q + ': V1.9 fixed option tab stops applied at 28mm / 56mm.')
     } catch {
-        Log ('Q' + $q + ': tab normalization skipped/failed: ' + $_.Exception.Message)
+        Log ('Q' + $q + ': V1.9 option alignment skipped/failed: ' + $_.Exception.Message)
     }
 }
 '@
@@ -74,19 +93,18 @@ function Normalize-ChoiceTabs($hwp, [int]$q) {
     }
 
     $src = $src.Replace($old, $new)
-    $src = $src.Replace('V1.7', 'V1.8')
-    $src = $src.Replace('AUTO-UPDATE + STABLE-CURSOR + AUTO-ALLOW + 3TAB->2TAB + HEADER', 'AUTO-UPDATE + STABLE-CURSOR + AUTO-ALLOW + ROBUST-TABS + HEADER')
-    $src = $src.Replace('Each temporary copy automatically changes 3 consecutive tabs to 2.', 'Each temporary copy normalizes 3+ / mixed tab gaps to two tabs.')
+    $src = $src.Replace('V1.7', 'V1.9')
+    $src = $src.Replace('AUTO-UPDATE + STABLE-CURSOR + AUTO-ALLOW + 3TAB->2TAB + HEADER', 'AUTO-UPDATE + STABLE-CURSOR + AUTO-ALLOW + FIXED-TABSTOPS + HEADER')
+    $src = $src.Replace('Each temporary copy automatically changes 3 consecutive tabs to 2.', 'Each temporary copy uses one Tab with fixed 28mm / 56mm option stops.')
 
-    # Windows PowerShell 5.1 writes UTF-8 with BOM here, avoiding the old parser issue.
     Set-Content -LiteralPath $runtime -Value $src -Encoding UTF8
-    Write-Host 'HWP AUTO V1.8 loaded - robust choice spacing.' -ForegroundColor Green
+    Write-Host 'HWP AUTO V1.9 loaded - fixed option tab stops (28mm / 56mm).' -ForegroundColor Green
     & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $runtime
     exit $LASTEXITCODE
 }
 catch {
     Write-Host ''
-    Write-Host 'V1.8 updater/runtime patch failed:' -ForegroundColor Red
+    Write-Host 'V1.9 updater/runtime patch failed:' -ForegroundColor Red
     Write-Host $_.Exception.Message -ForegroundColor Red
     Write-Host ''
     [void](Read-Host 'Press Enter to close')
