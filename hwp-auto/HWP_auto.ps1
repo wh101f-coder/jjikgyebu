@@ -42,42 +42,30 @@ function Try-RegisterSecurityModule($hwp) {
     Write-Host "Security module was not auto-registered. If HWP asks for file access, allow it." -ForegroundColor Yellow
 }
 
-function Get-Pos3($hwp) {
+function Create-SlotField($hwp, [string]$name, [string]$label) {
     try {
-        $posSet = $hwp.GetPosBySet()
-        if ($null -eq $posSet) { throw "GetPosBySet returned null" }
-        $list = [int]$posSet.Item("List")
-        $para = [int]$posSet.Item("Para")
-        $pos  = [int]$posSet.Item("Pos")
-        return @($list, $para, $pos)
+        $ok = $hwp.CreateField($label, "HMC paste slot", $name)
+        if (-not $ok) { throw "CreateField returned false" }
+        return
     } catch {
-        throw ("Cannot read cursor position: " + $_.Exception.Message)
+        throw ("Cannot create persistent slot field '" + $name + "': " + $_.Exception.Message)
     }
 }
 
-function Set-Pos3($hwp, $p) {
+function Move-To-SlotField($hwp, [string]$name) {
     try {
-        $ok = $hwp.SetPos([int]$p[0], [int]$p[1], [int]$p[2])
-        if (-not $ok) { throw "SetPos returned false" }
+        $ok = $hwp.MoveToField($name, $true, $true, $true)
+        if (-not $ok) { throw "MoveToField returned false" }
         return
-    } catch {}
-
-    try {
-        $posSet = $hwp.CreateSet("ListParaPos")
-        $posSet.SetItem("List", [int]$p[0])
-        $posSet.SetItem("Para", [int]$p[1])
-        $posSet.SetItem("Pos",  [int]$p[2])
-        $ok2 = $hwp.SetPosBySet($posSet)
-        if (-not $ok2) { throw "SetPosBySet returned false" }
     } catch {
-        throw ("Cannot restore cursor position: " + $_.Exception.Message)
+        throw ("Cannot move to persistent slot field '" + $name + "': " + $_.Exception.Message)
     }
 }
 
 Write-Host ""
-Write-Host "HWP exam-layout native copy test V3.2" -ForegroundColor Green
-Write-Host "Encoding-safe build: ASCII-only PowerShell source for Windows PowerShell 5.1."
-Write-Host "This test copies four problem blocks as native HWP content."
+Write-Host "HWP exam-layout native copy test V3.3" -ForegroundColor Green
+Write-Host "Fix: paste destinations are now persistent HWP fields, not raw cursor addresses."
+Write-Host "Raw cursor addresses can become invalid after problem 1 changes the document structure."
 Write-Host ""
 
 $here = Split-Path -Parent $MyInvocation.MyCommand.Path
@@ -127,15 +115,16 @@ try { $dst.XHwpWindows.Item(0).Visible = $true } catch {}
 
 Write-Host ""
 Write-Host "Step A: mark four paste positions in the OUTPUT document." -ForegroundColor Green
-Write-Host "Use the problem start positions in this order: top-left, top-right, bottom-left, bottom-right."
+Write-Host "IMPORTANT: use this order: problem 1 top-left, problem 2 bottom-left, problem 3 top-right, problem 4 bottom-right."
+Write-Host "A small temporary SLOT field will be inserted at each clicked position."
 
-$slotNames = @("top-left", "top-right", "bottom-left", "bottom-right")
-$slots = @()
+$slotNames = @("problem 1: top-left", "problem 2: bottom-left", "problem 3: top-right", "problem 4: bottom-right")
+$fieldNames = @("HMC_SLOT_1", "HMC_SLOT_2", "HMC_SLOT_3", "HMC_SLOT_4")
+
 for ($i = 0; $i -lt 4; $i++) {
-    Pause-Step ("Click the " + $slotNames[$i] + " problem-start position in the OUTPUT HWP window.")
-    $p = Get-Pos3 $dst
-    $slots += ,$p
-    Write-Host ("Saved position: List=" + $p[0] + ", Para=" + $p[1] + ", Pos=" + $p[2]) -ForegroundColor DarkGray
+    Pause-Step ("Click " + $slotNames[$i] + " in the OUTPUT HWP window.")
+    Create-SlotField $dst $fieldNames[$i] ("SLOT" + ($i + 1))
+    Write-Host ("Persistent field created: " + $fieldNames[$i]) -ForegroundColor DarkGray
 }
 
 Write-Host ""
@@ -146,9 +135,15 @@ Write-Host "Do not include page headers, column separator lines, footer lines, o
 for ($q = 1; $q -le 4; $q++) {
     Pause-Step ("In the SOURCE HWP window, select only problem " + $q + " as one block.")
     $src.Run("Copy")
-    Set-Pos3 $dst $slots[$q - 1]
+
+    $fieldName = $fieldNames[$q - 1]
+    Move-To-SlotField $dst $fieldName
+
+    # The field is selected. Delete it; the caret remains at the exact slot.
+    $dst.Run("Delete")
     $dst.Run("Paste")
-    Write-Host ("Problem " + $q + " pasted.") -ForegroundColor Green
+
+    Write-Host ("Problem " + $q + " pasted at " + $fieldName + ".") -ForegroundColor Green
 }
 
 try {
@@ -160,5 +155,5 @@ try {
 Write-Host ""
 Write-Host "DONE" -ForegroundColor Green
 Write-Host ("Output file: " + $outPath) -ForegroundColor Green
-Write-Host "Check whether equations, tables, pictures and text remain native HWP objects."
+Write-Host "Check that problems 1,2,3,4 are in TL, BL, TR, BR respectively and that no content went to endnotes."
 [void](Read-Host "Press Enter to close this console")
