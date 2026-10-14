@@ -86,9 +86,7 @@ function Get-EndnoteControls($hwp) {
     $arr = New-Object System.Collections.ArrayList
     $ctrl = $hwp.HeadCtrl
     while ($null -ne $ctrl) {
-        try {
-            if ($ctrl.CtrlID -eq "en") { [void]$arr.Add($ctrl) }
-        } catch {}
+        try { if ($ctrl.CtrlID -eq "en") { [void]$arr.Add($ctrl) } } catch {}
         try { $ctrl = $ctrl.Next } catch { break }
     }
     return ,$arr.ToArray()
@@ -98,58 +96,62 @@ function Count-Endnotes($hwp) {
     return @(Get-EndnoteControls $hwp).Count
 }
 
-function Delete-Ctrl-Safe($hwp, $ctrl) {
+function Goto-Next-Endnote($hwp) {
     try {
-        if ($hwp.DeleteCtrl($ctrl)) { return $true }
-    } catch {}
-    try {
-        $hwp.SetPosBySet($ctrl.GetAnchorPos(0))
-        $hwp.Run("NoteModify")
-        $hwp.Run("Delete")
-        return $true
-    } catch {}
-    return $false
+        $ps = $hwp.HParameterSet.HGotoE
+        $hwp.HAction.GetDefault("Goto", $ps.HSet)
+        $ps.HSet.SetItem("DialogResult", 32)   # 32 = endnote
+        $ps.SetSelectionIndex = 5              # typesetting mark
+        return [bool]$hwp.HAction.Execute("Goto", $ps.HSet)
+    } catch {
+        return $false
+    }
 }
 
-function Delete-Template-Endnotes-AlternatingPrefix($hwp, [int]$pastedProblemCount, [int]$templateBaseline) {
-    # After pasting k answer-bearing problems the observed order is:
-    # T1,S1,T2,S2,...,Tk,Sk,T(k+1),T(k+2)...
-    # Only T1..Tk must be removed. T(k+1)+ must stay.
-    # Delete target indexes from HIGH to LOW so earlier indexes never shift.
-    $before = Count-Endnotes $hwp
-    $sourceAdded = $before - $templateBaseline
-    if ($sourceAdded -lt 0) { $sourceAdded = 0 }
+function Remove-Template-Endnotes-ManualFlow($hwp, [int]$count) {
+    # Mirrors the user's proven manual sequence:
+    # Ctrl+PageUp -> Goto Endnote -> Delete -> confirm ->
+    # Goto Endnote -> MoveRight (skip source answer) -> repeat.
+    # This avoids relying on Ctrl object identity or shifting indexes.
 
-    $k = [Math]::Min($pastedProblemCount, $sourceAdded)
-    Write-Host ("Alternating cleanup: pasted=" + $pastedProblemCount + " / sourceAdded=" + $sourceAdded + " / deleteTemplateCount=" + $k) -ForegroundColor DarkGray
+    try { $hwp.Run("MoveTopLevelBegin") } catch { try { $hwp.Run("MoveDocBegin") } catch {} }
 
     $removed = 0
-    for ($q = $k; $q -ge 1; $q--) {
-        # zero-based Tq index in T1,S1,T2,S2,... is 2*(q-1)
-        $targetIndex = 2 * ($q - 1)
+    $skipped = 0
 
-        # Re-enumerate after every deletion. Because we are deleting from the end,
-        # all earlier target indexes remain valid.
-        $ctrls = @(Get-EndnoteControls $hwp)
-        if ($targetIndex -lt 0 -or $targetIndex -ge $ctrls.Count) {
-            Write-Host ("Skip invalid target index: " + $targetIndex + " / current=" + $ctrls.Count) -ForegroundColor Yellow
-            continue
+    for ($i = 1; $i -le $count; $i++) {
+        if (-not (Goto-Next-Endnote $hwp)) {
+            Write-Host ("Could not goto template endnote T" + $i) -ForegroundColor Yellow
+            break
         }
 
-        if (Delete-Ctrl-Safe $hwp $ctrls[$targetIndex]) {
+        try {
+            # YES/first button for the delete confirmation dialog.
+            $hwp.SetMessageBoxMode(0x00010000)
+            $hwp.Run("Delete")
             $removed++
-            Write-Host ("Deleted T" + $q + " at endnote index " + $targetIndex) -ForegroundColor DarkGray
-        } else {
-            Write-Host ("Failed deleting T" + $q + " at index " + $targetIndex) -ForegroundColor Yellow
+            Write-Host ("Deleted template endnote T" + $i) -ForegroundColor DarkGray
+        } catch {
+            Write-Host ("Delete failed at template endnote T" + $i) -ForegroundColor Yellow
+        } finally {
+            try { $hwp.SetMessageBoxMode(0x00000000) } catch {}
+        }
+
+        # Skip exactly one source answer endnote S_i.
+        if (-not (Goto-Next-Endnote $hwp)) {
+            Write-Host ("Could not goto source endnote S" + $i) -ForegroundColor Yellow
+            break
+        }
+        try {
+            $hwp.Run("MoveRight")
+            $skipped++
+            Write-Host ("Skipped source endnote S" + $i) -ForegroundColor DarkGray
+        } catch {
+            Write-Host ("MoveRight failed after source endnote S" + $i) -ForegroundColor Yellow
         }
     }
 
-    return [pscustomobject]@{
-        Removed=$removed
-        SourceAdded=$sourceAdded
-        Before=$before
-        After=(Count-Endnotes $hwp)
-    }
+    return [pscustomobject]@{ Removed=$removed; Skipped=$skipped; Remaining=(Count-Endnotes $hwp) }
 }
 
 function Detect-SourceAnswers($hwp, [string]$path) {
@@ -160,7 +162,6 @@ function Detect-SourceAnswers($hwp, [string]$path) {
 
     $txt = ""
     try { $txt = [string]$hwp.GetTextFile("TEXT", "") } catch {}
-
     $answerHeader = U @(0xC815,0xB2F5)
     $lines = @()
     if ($txt) { $lines = $txt -split "`r?`n" }
@@ -200,8 +201,8 @@ function Detect-SourceAnswers($hwp, [string]$path) {
 }
 
 Write-Host ""
-Write-Host "HWP exam-layout native copy test V3.9" -ForegroundColor Green
-Write-Host "V3.9 removes only T1..Tk from T1,S1,T2,S2,... and leaves T(k+1)+ untouched."
+Write-Host "HWP exam-layout native copy test V4.0" -ForegroundColor Green
+Write-Host "V4.0 removes template endnotes by reproducing the manual Goto-Endnote/Delete/Skip sequence." 
 Write-Host ""
 
 $here = Split-Path -Parent $MyInvocation.MyCommand.Path
@@ -265,13 +266,12 @@ for ($q = 1; $q -le $pastedProblemCount; $q++) {
 foreach ($m in $markers) { AllReplace-Plain $dst $m "" }
 
 if ($detect.HasAnswers) {
-    $cleanup = Delete-Template-Endnotes-AlternatingPrefix $dst $pastedProblemCount $templateEndnotes
-    Write-Host ("Template blanks removed: " + $cleanup.Removed) -ForegroundColor Green
-    Write-Host ("Source answer endnotes added: " + $cleanup.SourceAdded) -ForegroundColor Green
-    Write-Host ("Endnotes before=" + $cleanup.Before + " / after=" + $cleanup.After) -ForegroundColor DarkGray
-    Write-Host "Expected for this test: S1,S2,S3,S4,T5,T6,T7... remain." -ForegroundColor Green
+    Write-Host "Starting manual-style alternating endnote cleanup..." -ForegroundColor Green
+    $cleanup = Remove-Template-Endnotes-ManualFlow $dst $pastedProblemCount
+    Write-Host ("Deleted template notes=" + $cleanup.Removed + " / skipped source notes=" + $cleanup.Skipped + " / remaining=" + $cleanup.Remaining) -ForegroundColor Green
+    Write-Host "Expected quick answers: S1,S2,S3,S4 followed by untouched template blanks T5,T6..." -ForegroundColor Green
 } else {
-    Write-Host "NO-ANSWER mode: no template endnote cleanup. T1,T2,T3... remain." -ForegroundColor Green
+    Write-Host "NO-ANSWER mode: template blank endnotes remain untouched." -ForegroundColor Green
 }
 
 try { [void]$dst.SaveAs($outPath, "HWP", "") } catch { try { $dst.Run("FileSave") } catch {} }
